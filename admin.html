@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Administrar productos | YC NICE LADY</title>
+  <link rel="icon" type="image/jpeg" href="img/logo.jpg">
+  <link rel="stylesheet" href="css/admin.css">
+</head>
+<body>
+  <header class="admin-header">
+    <a href="index.html" class="admin-brand"><img src="img/logo.jpg" alt=""><span>YC NICE LADY</span></a>
+    <a href="index.html" class="back-to-store">Ver tienda ↗</a>
+  </header>
+
+  <main class="admin-main">
+    <section class="login-card" id="loginView" aria-labelledby="loginTitle">
+      <p class="eyebrow">Acceso privado</p>
+      <h1 id="loginTitle">Administrar productos</h1>
+      <p>Ingresa con el correo y la contraseña que creaste en Supabase.</p>
+      <form id="loginForm" class="form-stack">
+        <label>Correo electrónico<input type="email" name="email" autocomplete="email" required></label>
+        <label>Contraseña<input type="password" name="password" autocomplete="current-password" required></label>
+        <button class="button" type="submit">Ingresar</button>
+      </form>
+      <p class="form-message" id="loginMessage" role="status"></p>
+    </section>
+
+    <section id="adminView" hidden>
+      <div class="admin-intro">
+        <div><p class="eyebrow">Panel privado</p><h1>Tu catálogo</h1><p>Agrega, edita, oculta o elimina productos. Los cambios se reflejarán en la tienda.</p></div>
+        <button class="sign-out" id="signOut" type="button">Cerrar sesión</button>
+      </div>
+
+      <div class="admin-layout">
+        <section class="panel product-form-panel" aria-labelledby="formTitle">
+          <div class="panel-heading"><h2 id="formTitle">Nuevo producto</h2><button class="text-button" id="resetProductForm" type="button" hidden>Cancelar edición</button></div>
+          <form id="productForm" class="form-stack">
+            <input type="hidden" name="id">
+            <input type="hidden" name="existingImagePath">
+            <label>Nombre del producto<input type="text" name="name" maxlength="90" required></label>
+            <label>Descripción<textarea name="description" rows="3" maxlength="280" placeholder="Descripción breve del producto"></textarea></label>
+            <div class="form-columns">
+              <label>Precio (S/)<input type="number" name="price" min="0" step="0.01" inputmode="decimal" required></label>
+              <label>Stock disponible<input type="number" name="stock" min="0" step="1" inputmode="numeric" required></label>
+            </div>
+            <label class="file-label">Foto del producto<input type="file" name="image" accept="image/jpeg,image/png,image/webp"><small>JPG, PNG o WEBP. Máximo 5 MB.</small></label>
+            <label class="switch-label"><input type="checkbox" name="isActive" checked><span>Visible para clientes</span></label>
+            <button class="button" id="saveProduct" type="submit">Guardar producto</button>
+          </form>
+          <p class="form-message" id="productMessage" role="status"></p>
+        </section>
+
+        <section class="panel products-list-panel" aria-labelledby="listTitle">
+          <div class="panel-heading"><div><h2 id="listTitle">Productos creados</h2><p id="productsSummary">Cargando…</p></div><button class="text-button" id="refreshProducts" type="button">Actualizar</button></div>
+          <div class="admin-products" id="adminProducts"></div>
+        </section>
+      </div>
+    </section>
+  </main>
+  <script src="js/supabase-config.js"></script>
+  <script src="js/admin.js"></script>
+</body>
+</html>

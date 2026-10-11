@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>YC NICE LADY | Belleza • Estilo • Confianza</title>
+<link rel="stylesheet" href="css/style.css">
+<link rel="icon" type="image/jpeg" href="img/logo.jpg">
+
+</head>
+<body>
+
+<header class="header">
+  <nav class="nav">
+    <a href="#inicio" class="brand">
+      <img src="img/logo.jpg" alt="YC NICE LADY">
+      <span>YC NICE LADY</span>
+    </a>
+    <button class="menu-btn" id="menuBtn" aria-label="Abrir menú" aria-expanded="false">
+      <i></i><i></i><i></i>
+    </button>
+  </nav>
+</header>
+
+<div class="drawer" id="drawer">
+  <small>Explora YC NICE LADY</small>
+  <a href="#inicio">♡ <span>Inicio · Confianza</span></a>
+  <a href="#productos">✦ <span>Productos</span></a>
+  <a href="#pagos">♡ <span>Pagos</span></a>
+  <a href="#contactar">⌕ <span>Contactar</span></a>
+</div>
+
+<main>
+<section class="hero" id="inicio">
+  <div class="hero-inner">
+    <div>
+      <span class="eyebrow">✦ Belleza que inspira confianza</span>
+      <h1>Tu belleza,<br><em>tu estilo.</em></h1>
+      <p>Descubre una selección pensada para realzar tu esencia. En <strong>YC NICE LADY</strong> encontrarás productos de belleza, estilo y detalles que hacen sentir especial cada momento.</p>
+      <div class="cta-row">
+        <a class="btn primary" href="#productos">Ver productos →</a>
+        <a class="btn secondary" href="#contactar">Hablar con nosotros</a>
+      </div>
+    </div>
+    <div class="hero-art">
+      <div class="glow"></div>
+      <div class="logo-showcase">
+        <div class="logo-ring">✦</div>
+        <img src="img/logo.jpg" class="main-logo" alt="Logo oficial de YC NICE LADY">
+        <div class="logo-caption">BELLEZA · ESTILO · CONFIANZA</div>
+      </div>
+      <div class="hero-seal">♡</div>
+    </div>
+  </div>
+</section>
+
+<section class="trust">
+  <div class="section-inner">
+    <div class="section-title">
+      <div class="kicker">Inicio · Confianza</div>
+      <h2>Una experiencia hecha para ti</h2>
+      <p>Queremos que comprar belleza sea sencillo, bonito y confiable. Cada detalle de YC NICE LADY está pensado para transmitir cercanía.</p>
+    </div>
+    <div class="trust-grid">
+      <article class="trust-card"><div class="icon">♡</div><h3>Compra con confianza</h3><p>Información clara y atención cercana para que puedas elegir tus productos con tranquilidad.</p></article>
+      <article class="trust-card"><div class="icon">✦</div><h3>Selección especial</h3><p>Productos elegidos para complementar tu rutina y ayudarte a expresar tu propio estilo.</p></article>
+      <article class="trust-card"><div class="icon">❀</div><h3>Atención personalizada</h3><p>Si tienes dudas, escríbenos. Te ayudaremos a encontrar la opción que mejor se adapte a ti.</p></article>
+    </div>
+  </div>
+</section>
+
+<section class="products" id="productos">
+  <div class="section-inner">
+    <div class="section-title">
+      <div class="kicker">Catálogo</div>
+      <h2>Productos de YC NICE LADY</h2>
+      <p>Elige tus favoritos y agrégalos a tu pedido.</p>
+    </div>
+    <div class="catalogue-toolbar">
+      <p id="productStatus" class="catalogue-status" role="status">Cargando catálogo…</p>
+      <button class="cart-trigger" id="openCart" type="button" aria-haspopup="dialog">
+        <span aria-hidden="true">♡</span> Mi carrito <b id="cartCount">0</b>
+      </button>
+    </div>
+    <div class="product-grid" id="productGrid" aria-live="polite">
+      <p class="catalogue-loading">Cargando productos…</p>
+    </div>
+  </div>
+</section>
+
+<dialog class="cart-dialog" id="cartDialog" aria-labelledby="cartTitle">
+  <div class="cart-head"><div><span class="kicker">Tu pedido</span><h2 id="cartTitle">Mi carrito</h2></div><button class="cart-close" id="closeCart" type="button" aria-label="Cerrar carrito">×</button></div>
+  <div class="cart-items" id="cartItems"></div>
+  <p class="cart-message" id="cartMessage" role="status"></p>
+  <div class="cart-footer"><div><span>Total</span><strong id="cartTotal">S/ 0.00</strong></div><button class="btn primary checkout-btn" id="checkoutButton" type="button">Pedir por WhatsApp ↗</button></div>
+</dialog>
+
+<section class="payments" id="pagos">
+  <div class="section-inner">
+    <div class="section-title">
+      <div class="kicker">Pagos</div>
+      <h2>Compra fácil y segura</h2>
+      <p>Esta sección queda lista para que agregues tus métodos de pago reales.</p>
+    </div>
+    <div class="pay-grid">
+      <div class="pay-box">
+        <h3>Métodos disponibles</h3>
+        <div class="methods-list">
+          <div class="method"><div class="icon"><img class="payment-logo" src="img/payments/yape.png" alt="Yape"></div><div><b>Yape</b><span class="payment-data">Número: 910 800 944</span></div></div>
+          <div class="method"><div class="icon"><img class="payment-logo" src="img/payments/plin.png" alt="Plin"></div><div><b>Plin</b><span class="payment-data">Número: 910 800 944</span></div></div>
+          <div class="method"><div class="icon"><img class="payment-logo" src="img/payments/lemon.png" alt="Lemon"></div><div><b>Lemon</b><span class="payment-data">$ycnicelady</span></div></div>
+          <div class="method"><div class="icon"><img class="payment-logo" src="img/payments/bitcoin.png" alt="Bitcoin"></div><div><b>Bitcoin</b><span class="payment-data">bc1qdmmgezgfdjj6wugu6qvnp8k0evcsvqdgy5dlln</span></div></div>
+          <div class="method"><div class="icon"><img class="payment-logo" src="img/payments/transferencia.png" alt="Transferencia bancaria"></div><div><b>Transferencia</b><span class="payment-data">Cta.: 39007853074069<br>CCI: 00239010785307406930</span></div></div>
+          <div class="method"><div class="icon"><img class="payment-logo" src="img/payments/efectivo.jpg" alt="Pago en efectivo"></div><div><b>Efectivo</b><span>Disponible al coordinar tu pedido</span></div></div>
+        </div>
+      </div>
+      <div class="pay-box">
+        <h3>¿Cómo comprar?</h3>
+        <ul>
+          <li>Elige el producto que deseas.</li>
+          <li>Escríbenos para confirmar disponibilidad.</li>
+          <li>Realiza el pago por el método acordado.</li>
+          <li>Envía tu comprobante y coordina la entrega.</li>
+        </ul>
+        <div class="cta-row"><a class="btn primary" href="#contactar">Coordinar pedido →</a></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="contact" id="contactar">
+  <div class="decor d1">❀</div><div class="decor d2">♡</div>
+  <div class="section-inner">
+    <div class="section-title">
+      <div class="kicker">Contacto</div>
+      <h2>Estamos para ayudarte</h2>
+      <p>Escríbenos por WhatsApp o síguenos en TikTok y Facebook para conocer novedades.</p>
+    </div>
+    <div class="contact-grid">
+      <div class="contact-card">
+        <h3>Conversemos</h3>
+        <a class="contact-item contact-link" href="https://wa.me/51930197471" target="_blank" rel="noopener" aria-label="Escribir a YC NICE LADY por WhatsApp"><div class="ci"><img class="social-logo" src="img/social/whatsapp.svg" alt=""></div><div><b>WhatsApp</b><br><span>+51 930 197 471</span></div></a>
+        <a class="contact-item contact-link" href="https://tiktok.com/@yc_nicelady.oficial" target="_blank" rel="noopener" aria-label="Ver TikTok de YC NICE LADY"><div class="ci"><img class="social-logo" src="img/social/tiktok.svg" alt=""></div><div><b>TikTok</b><br><span>@yc_nicelady.oficial</span></div></a>
+        <a class="contact-item contact-link" href="https://www.facebook.com/share/19yoHLMTAf/" target="_blank" rel="noopener" aria-label="Ver Facebook de YC NICE LADY"><div class="ci"><img class="social-logo" src="img/social/facebook.svg" alt=""></div><div><b>Facebook</b><br><span>YC NICE LADY</span></div></a>
+      </div>
+      <div class="contact-card">
+        <h3>¿Lista para elegir?</h3>
+        <p style="line-height:1.8;color:#f7e8ed;margin-bottom:22px">Escríbenos y te ayudaremos con disponibilidad, precios, pagos y entrega.</p>
+        <a class="btn primary" href="https://wa.me/51930197471" target="_blank" rel="noopener">Escribir por WhatsApp ↗</a>
+      </div>
+    </div>
+  </div>
+</section>
+</main>
+
+<footer>© 2026 YC NICE LADY · Belleza · Estilo · Confianza</footer>
+
+<script src="js/script.js"></script>
+<script src="js/supabase-config.js"></script>
+<script src="js/store.js"></script>
+</body>
+</html>
