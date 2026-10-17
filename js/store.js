@@ -275,7 +275,7 @@ async function checkout() {
     '',
     `_Total:_ ${formatMoney(total)}`,
     '',
-    '¿Me confirman si está disponible, por favor? También quisiera saber cómo coordinar la entrega.',
+    'Deseo coordinar la entrega y saber si mi zona me sale delivery gratis.',
     'Gracias.'
   ].join('\n');
   checkoutButton.disabled = true;
