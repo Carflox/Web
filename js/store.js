@@ -262,10 +262,10 @@ async function checkout() {
   const lines = entries.flatMap(({ product, quantity }) => {
     const photo = imageUrl(product.image_path);
     return [
-      `🛍️ *Producto:* ${product.name}`,
-      `📦 *Cantidad:* ${quantity} ${quantity === 1 ? 'unidad' : 'unidades'}`,
-      `💰 *Precio:* ${formatMoney(Number(product.price))}`,
-      `🖼️ *Foto del producto:* ${photo || 'No disponible'}`
+      `\u{1F6CD}\uFE0F *Producto:* ${product.name}`,
+      `\u{1F4E6} *Cantidad:* ${quantity} ${quantity === 1 ? 'unidad' : 'unidades'}`,
+      `\u{1F4B0} *Precio:* ${formatMoney(Number(product.price))}`,
+      `\u{1F5BC}\uFE0F *Foto del producto:* ${photo || 'No disponible'}`
     ];
   });
   const message = [
