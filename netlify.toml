@@ -1,0 +1,11 @@
+[build]
+  publish = "."
+  functions = "netlify/functions"
+
+[functions]
+  node_bundler = "esbuild"
+
+[[redirects]]
+  from = "/f/:code"
+  to = "/.netlify/functions/product-photo?code=:code"
+  status = 200

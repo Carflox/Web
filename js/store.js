@@ -46,6 +46,18 @@ function imageUrl(path) {
   return `${SUPABASE_URL}/storage/v1/object/public/${encodeURIComponent(PRODUCTS_BUCKET)}/${safePath}`;
 }
 
+function shortProductPhotoUrl(product) {
+  if (!product?.id || !product.image_path) return '';
+  const hex = String(product.id).replace(/-/g, '');
+  if (!/^[0-9a-f]{32}$/i.test(hex)) return '';
+  const bytes = hex.match(/.{2}/g).map((byte) => parseInt(byte, 16));
+  const compactId = btoa(String.fromCharCode(...bytes))
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/g, '');
+  return `${window.location.origin}/f/${compactId}`;
+}
+
 function showCatalogueProblem(title, message) {
   status.textContent = title;
   grid.innerHTML = `
@@ -260,7 +272,7 @@ async function checkout() {
 
   const total = entries.reduce((sum, { product, quantity }) => sum + Number(product.price) * quantity, 0);
   const lines = entries.map(({ product, quantity }) => {
-    const photo = imageUrl(product.image_path);
+    const photo = shortProductPhotoUrl(product);
     return [
       `_Producto:_ ${product.name}`,
       `_Cantidad:_ ${quantity} ${quantity === 1 ? 'unidad' : 'unidades'}`,
