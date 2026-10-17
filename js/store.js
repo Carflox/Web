@@ -259,21 +259,21 @@ async function checkout() {
   }
 
   const total = entries.reduce((sum, { product, quantity }) => sum + Number(product.price) * quantity, 0);
-  const lines = entries.flatMap(({ product, quantity }) => {
+  const lines = entries.map(({ product, quantity }) => {
     const photo = imageUrl(product.image_path);
     return [
-      `\u{1F6CD}\uFE0F *Producto:* ${product.name}`,
-      `\u{1F4E6} *Cantidad:* ${quantity} ${quantity === 1 ? 'unidad' : 'unidades'}`,
-      `\u{1F4B0} *Precio:* ${formatMoney(Number(product.price))}`,
-      `\u{1F5BC}\uFE0F *Foto del producto:* ${photo || 'No disponible'}`
-    ];
+      `_Producto:_ ${product.name}`,
+      `_Cantidad:_ ${quantity} ${quantity === 1 ? 'unidad' : 'unidades'}`,
+      `_Precio:_ ${formatMoney(Number(product.price))}`,
+      `_Foto del producto:_ ${photo || 'No disponible'}`
+    ].join('\n');
   });
   const message = [
     'Hola, quiero realizar este pedido en YC NICE LADY:',
     '',
-    ...lines,
+    lines.join('\n\n'),
     '',
-    `*Total: ${formatMoney(total)}*`,
+    `_Total:_ ${formatMoney(total)}`,
     '',
     '¿Me confirman si está disponible, por favor? También quisiera saber cómo coordinar la entrega.',
     'Gracias.'
