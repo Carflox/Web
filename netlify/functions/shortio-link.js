@@ -33,7 +33,9 @@ exports.handler = async (event) => {
     return json(400, { error: 'Identificador de producto no válido.' });
   }
 
-  const originalURL = `${SITE_ORIGIN}/foto/${encodeURIComponent(productId)}`;
+  // La versión de la URL genera un enlace nuevo para evitar que WhatsApp reutilice
+  // la vista previa anterior, que seguía mostrando el destino largo de Supabase.
+  const originalURL = `${SITE_ORIGIN}/foto/${encodeURIComponent(productId)}?v=2`;
   try {
     const response = await fetch('https://api.short.io/links', {
       method: 'POST',

@@ -33,13 +33,40 @@ exports.handler = async (event) => {
 
     const safePath = product.image_path.split('/').map(encodeURIComponent).join('/');
     const imageUrl = `${SUPABASE_URL}/storage/v1/object/public/product-images/${safePath}`;
+    const pageUrl = `https://ycnicelady.netlify.app/foto/${encodeURIComponent(id)}?v=2`;
+    const escapeHtml = (value) => String(value).replace(/[&<>"']/g, (character) => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    })[character]);
+    const safeImageUrl = escapeHtml(imageUrl);
+    const safePageUrl = escapeHtml(pageUrl);
     return {
-      statusCode: 302,
+      statusCode: 200,
       headers: {
-        Location: imageUrl,
-        'Cache-Control': 'public, max-age=60'
+        'Content-Type': 'text/html; charset=utf-8',
+        'Cache-Control': 'public, max-age=300',
+        'X-Content-Type-Options': 'nosniff'
       },
-      body: ''
+      body: `<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Foto del producto | YC NICE LADY</title>
+  <meta name="description" content="Mira este producto de YC NICE LADY.">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="YC NICE LADY">
+  <meta property="og:title" content="Foto del producto | YC NICE LADY">
+  <meta property="og:description" content="Mira este producto de YC NICE LADY.">
+  <meta property="og:url" content="${safePageUrl}">
+  <meta property="og:image" content="${safeImageUrl}">
+  <meta property="og:image:secure_url" content="${safeImageUrl}">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Foto del producto | YC NICE LADY">
+  <meta name="twitter:image" content="${safeImageUrl}">
+  <style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#fff7f9;font-family:Arial,sans-serif;color:#573b49}.photo{max-width:min(92vw,760px);max-height:92vh;border-radius:16px;object-fit:contain;box-shadow:0 8px 32px #573b4922}</style>
+</head>
+<body><img class="photo" src="${safeImageUrl}" alt="Producto de YC NICE LADY"></body>
+</html>`
     };
   } catch (error) {
     console.error('Error al abrir la foto del producto:', error);

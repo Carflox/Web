@@ -244,7 +244,7 @@ async function productPhotoUrl(product) {
   const fallback = fallbackPhotoUrl(product);
   if (!product?.id || !product.image_path) return '';
   let cache = {};
-  try { cache = JSON.parse(localStorage.getItem('yc-nice-lady-shortio-links') || '{}'); } catch { cache = {}; }
+  try { cache = JSON.parse(localStorage.getItem('yc-nice-lady-shortio-links-v2') || '{}'); } catch { cache = {}; }
   if (cache[product.id]) return cache[product.id];
 
   try {
@@ -256,7 +256,7 @@ async function productPhotoUrl(product) {
     const result = await response.json();
     if (!response.ok || !result.link) return fallback;
     cache[product.id] = result.link;
-    try { localStorage.setItem('yc-nice-lady-shortio-links', JSON.stringify(cache)); } catch { /* Se puede continuar sin caché. */ }
+    try { localStorage.setItem('yc-nice-lady-shortio-links-v2', JSON.stringify(cache)); } catch { /* Se puede continuar sin caché. */ }
     return result.link;
   } catch (error) {
     console.warn('Short.io no pudo crear el enlace corto; se usará el enlace de Netlify:', error);
