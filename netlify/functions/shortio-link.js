@@ -1,4 +1,5 @@
 const SITE_ORIGIN = 'https://ycnicelady.netlify.app';
+const SHORT_IO_DOMAIN = 'ycnicelady.s.gy';
 const PRODUCT_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function json(statusCode, payload) {
@@ -15,12 +16,8 @@ exports.handler = async (event) => {
   }
 
   const apiKey = process.env.SHORT_IO;
-  const domain = String(process.env.SHORT_IO_DOMAIN || '').replace(/^https?:\/\//i, '').replace(/\/$/, '');
-  if (!apiKey || !domain) {
-    return json(503, { error: 'Short.io todavía no está configurado en Netlify.' });
-  }
-  if (!/^[a-z0-9.-]+$/i.test(domain)) {
-    return json(503, { error: 'El dominio de Short.io no es válido.' });
+  if (!apiKey) {
+    return json(503, { error: 'La clave de Short.io todavía no está configurada en Netlify.' });
   }
 
   let productId;
@@ -44,7 +41,7 @@ exports.handler = async (event) => {
         accept: 'application/json',
         'content-type': 'application/json'
       },
-      body: JSON.stringify({ originalURL, domain, allowDuplicates: false })
+      body: JSON.stringify({ originalURL, domain: SHORT_IO_DOMAIN, allowDuplicates: false })
     });
     const result = await response.json();
     const link = result.secureShortURL || result.shortURL;
