@@ -4,3 +4,8 @@
 
 [functions]
   node_bundler = "esbuild"
+
+[[redirects]]
+  from = "/foto/:id"
+  to = "/.netlify/functions/product-photo?id=:id"
+  status = 200

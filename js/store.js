@@ -182,7 +182,7 @@ async function loadProducts({ loading = true } = {}) {
 
   try {
     const search = new URLSearchParams({
-      select: 'id,name,description,price,stock,image_path,created_at',
+      select: 'id,name,description,category,price,stock,image_path,created_at',
       is_active: 'eq.true',
       order: 'created_at.desc'
     });
@@ -236,31 +236,10 @@ async function reserveCartStock(entries) {
   return payload;
 }
 
-async function shortenImageUrl(url) {
-  let cache = {};
-  try { cache = JSON.parse(localStorage.getItem('yc-nice-lady-bitly-links') || '{}'); } catch { cache = {}; }
-  if (cache[url]) return cache[url];
-  try {
-    const controller = new AbortController();
-    const timer = window.setTimeout(() => controller.abort(), 8000);
-    const response = await fetch('/.netlify/functions/shorten-bitly', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url }),
-      signal: controller.signal
-    });
-    window.clearTimeout(timer);
-    const result = await response.json();
-    if (!response.ok || !result.link) return '';
-    cache[url] = result.link;
-    try { localStorage.setItem('yc-nice-lady-bitly-links', JSON.stringify(cache)); } catch { /* Se puede usar el enlace sin caché. */ }
-    return result.link;
-  } catch (error) {
-    console.warn('Bitly no pudo acortar la foto del producto:', error);
-    return '';
-  }
+function productPhotoUrl(product) {
+  if (!product?.id || !product.image_path) return '';
+  return `${window.location.origin}/foto/${encodeURIComponent(product.id)}`;
 }
-
 async function checkout() {
   if (!cartEntries().length) return;
   const phone = WHATSAPP_NUMBER.replace(/\D/g, '');
@@ -286,7 +265,7 @@ async function checkout() {
   const total = entries.reduce((sum, { product, quantity }) => sum + Number(product.price) * quantity, 0);
   const lines = await Promise.all(entries.map(async ({ product, quantity }) => {
     const photo = imageUrl(product.image_path);
-    const shortPhoto = photo ? await shortenImageUrl(photo) : '';
+    const shortPhoto = photo ? productPhotoUrl(product) : '';
     const photoLine = photo ? (shortPhoto ? `\nFoto: ${shortPhoto}` : '\nFoto: te la compartimos al confirmar disponibilidad.') : '';
     return `• ${product.name} × ${quantity} — ${formatMoney(Number(product.price) * quantity)}${photoLine}`;
   }));

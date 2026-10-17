@@ -77,19 +77,8 @@ y guardar la fotografía dentro de la carpeta `img`.
 
 Los números de WhatsApp, Instagram, precios y datos de pago son datos de ejemplo y deben reemplazarse por los datos reales antes de publicar la página.
 
-## Enlaces cortos de Bitly en WhatsApp
+## Enlaces cortos de fotos en WhatsApp
 
-La tienda usa una función de Netlify para crear enlaces `bit.ly` para las fotos de los productos. El token de Bitly se guarda en Netlify y no debe escribirse en `js/` ni en los archivos públicos del sitio.
+Los pedidos comparten las fotos mediante una ruta corta del propio sitio: `https://ycnicelady.netlify.app/foto/ID-DEL-PRODUCTO`. Netlify consulta el producto y redirige a la foto pública en Supabase. Esta solución no usa Bitly ni requiere un token externo.
 
-### Activar Bitly en el sitio publicado
-
-1. En Bitly, abre **Settings → API** y genera un access token.
-2. En la configuración del sitio de Netlify, añade una variable de entorno llamada `BITLY_ACCESS_TOKEN` con ese token. Habilítala para las funciones.
-3. Vuelve a publicar el sitio para que la función reciba la variable.
-4. Haz un pedido desde la tienda publicada. La foto aparecerá en WhatsApp con un enlace `https://bit.ly/...`.
-
-### Probar en una computadora
-
-Abre la carpeta del proyecto en una terminal con Netlify CLI instalado y ejecuta `netlify dev`. Prueba la tienda desde la dirección local que muestre Netlify. Abrir `index.html` directamente con `file://` no ejecuta la función de Netlify.
-
-Si el token no está configurado o Bitly no responde, el pedido no incluirá la URL larga de Supabase; indicará que la foto se compartirá al confirmar la disponibilidad.
+La ruta se define en `netlify.toml` y la función correspondiente está en `netlify/functions/product-photo.js`. Para que funcione en producción, publica los cambios en Netlify. Abrir `index.html` directamente con `file://` no ejecuta la función.
