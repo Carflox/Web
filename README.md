@@ -76,9 +76,3 @@ y guardar la fotografía dentro de la carpeta `img`.
 ## Nota
 
 Los números de WhatsApp, Instagram, precios y datos de pago son datos de ejemplo y deben reemplazarse por los datos reales antes de publicar la página.
-
-## Enlaces cortos de fotos en WhatsApp
-
-Los pedidos comparten las fotos mediante una ruta corta del propio sitio: `https://ycnicelady.netlify.app/foto/ID-DEL-PRODUCTO`. Netlify consulta el producto y redirige a la foto pública en Supabase. Esta solución no usa Bitly ni requiere un token externo.
-
-La ruta se define en `netlify.toml` y la función correspondiente está en `netlify/functions/product-photo.js`. Para que funcione en producción, publica los cambios en Netlify. Abrir `index.html` directamente con `file://` no ejecuta la función.
