@@ -79,6 +79,7 @@ function syncCartWithStock() {
 }
 
 function categoryFor(product) {
+  if (['pestanas', 'maquillaje', 'accesorios'].includes(product.category)) return product.category;
   const text = `${product.name} ${product.description || ''}`.toLocaleLowerCase('es');
   if (/pestañ|lash|rimel|rímel|ceja|eyelash|cluster/.test(text)) return 'pestanas';
   if (/maquill|labial|base |corrector|rubor|sombra|delineador|polvo/.test(text)) return 'maquillaje';

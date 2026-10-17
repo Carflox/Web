@@ -85,6 +85,10 @@ function formatMoney(value) {
   return `S/ ${Number(value || 0).toFixed(2)}`;
 }
 
+function categoryLabel(category) {
+  return ({ pestanas: 'Pestañas', maquillaje: 'Maquillajes', accesorios: 'Accesorios' })[category] || 'Accesorios';
+}
+
 function resetProductForm() {
   productForm.reset();
   productForm.elements.id.value = '';
@@ -112,7 +116,7 @@ function renderProducts() {
         <div>
           <h3>${escapeHtml(product.name)}</h3>
           <p>${escapeHtml(product.description || 'Sin descripción')}</p>
-          <div class="admin-product-meta"><span>${formatMoney(product.price)}</span><span>Stock: ${product.stock}</span><span class="visibility ${product.is_active ? '' : 'hidden'}">${product.is_active ? 'Visible' : 'Oculto'}</span></div>
+          <div class="admin-product-meta"><span>${formatMoney(product.price)}</span><span>Stock: ${product.stock}</span><span>${categoryLabel(product.category)}</span><span class="visibility ${product.is_active ? '' : 'hidden'}">${product.is_active ? 'Visible' : 'Oculto'}</span></div>
         </div>
         <div class="row-actions">
           <button type="button" data-action="edit" data-product-id="${product.id}">Editar</button>
@@ -149,6 +153,7 @@ function editProduct(product) {
   productForm.elements.existingImagePath.value = product.image_path || '';
   productForm.elements.name.value = product.name;
   productForm.elements.description.value = product.description || '';
+  productForm.elements.category.value = product.category || 'accesorios';
   productForm.elements.price.value = product.price;
   productForm.elements.stock.value = product.stock;
   productForm.elements.isActive.checked = product.is_active;
@@ -199,6 +204,7 @@ async function saveProduct(event) {
   const previousImagePath = form.get('existingImagePath');
   const name = form.get('name').trim();
   const description = form.get('description').trim();
+  const category = form.get('category');
   const price = Number(form.get('price'));
   const stock = Number(form.get('stock'));
 
@@ -232,7 +238,7 @@ async function saveProduct(event) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' },
       body: JSON.stringify({
-        id, name, description, price, stock, image_path: imagePath,
+        id, name, description, category, price, stock, image_path: imagePath,
         is_active: form.get('isActive') === 'on'
       })
     });

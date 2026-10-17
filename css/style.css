@@ -292,3 +292,6 @@ footer{padding:25px 6%;background:#3e2932;color:#e9d8de;text-align:center;font-s
   .cart-footer strong{font-size:1.18rem}
   .checkout-btn{width:auto;max-width:62%;padding:13px 15px;text-align:center;justify-content:center;font-size:.86rem;white-space:normal}
 }
+
+/* Catálogo: tres columnas en pantallas Android y tablet */
+@media(max-width:900px){.product-grid{grid-template-columns:repeat(3,minmax(0,1fr)) !important}.product-card{min-width:0;width:100%}}

@@ -41,6 +41,7 @@
             <input type="hidden" name="existingImagePath">
             <label>Nombre del producto<input type="text" name="name" maxlength="90" required></label>
             <label>Descripción<textarea name="description" rows="3" maxlength="280" placeholder="Descripción breve del producto"></textarea></label>
+            <label>Categoría<select name="category" required><option value="pestanas">Pestañas</option><option value="maquillaje">Maquillajes</option><option value="accesorios">Accesorios</option></select></label>
             <div class="form-columns">
               <label>Precio (S/)<input type="number" name="price" min="0" step="0.01" inputmode="decimal" required></label>
               <label>Stock disponible<input type="number" name="stock" min="0" step="1" inputmode="numeric" required></label>
