@@ -76,6 +76,7 @@
       <h2>Productos de YC NICE LADY</h2>
       <p>Elige tus favoritos y agrégalos a tu pedido.</p>
     </div>
+    <div class="catalogue-filters" aria-label="Filtros de productos"><div class="category-tabs" role="group" aria-label="Categoría"><button class="filter-chip is-active" type="button" data-category="all">Todos</button><button class="filter-chip" type="button" data-category="pestanas">Pestañas</button><button class="filter-chip" type="button" data-category="maquillaje">Maquillajes</button><button class="filter-chip" type="button" data-category="accesorios">Accesorios</button></div><label class="price-filter">Precio máximo <span id="priceMaxLabel">S/ 500</span><input id="priceMax" type="range" min="0" max="500" step="5" value="500"></label></div>
     <div class="catalogue-toolbar">
       <p id="productStatus" class="catalogue-status" role="status">Cargando catálogo…</p>
       <button class="cart-trigger" id="openCart" type="button" aria-haspopup="dialog">
@@ -94,6 +95,7 @@
   <p class="cart-message" id="cartMessage" role="status"></p>
   <div class="cart-footer"><div><span>Total</span><strong id="cartTotal">S/ 0.00</strong></div><button class="btn primary checkout-btn" id="checkoutButton" type="button">Pedir por WhatsApp ↗</button></div>
 </dialog>
+<dialog class="product-preview" id="productPreview" aria-label="Vista del producto"><button type="button" class="preview-close" aria-label="Cerrar">×</button><img id="previewImage" alt=""><div class="preview-caption"><h2 id="previewName"></h2><p id="previewPrice"></p><button type="button" class="add-cart" id="previewAdd">Agregar al carrito</button></div></dialog>
 
 <section class="payments" id="pagos">
   <div class="section-inner">
@@ -157,6 +159,6 @@
 
 <script src="js/script.js"></script>
 <script src="js/supabase-config.js"></script>
-<script src="js/store.js"></script>
+<script src="js/store.js?v=bitly-20261016-1"></script>
 </body>
 </html>

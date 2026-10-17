@@ -9,6 +9,9 @@ const cartCount = document.querySelector('#cartCount');
 const cartTotal = document.querySelector('#cartTotal');
 const cartMessage = document.querySelector('#cartMessage');
 const checkoutButton = document.querySelector('#checkoutButton');
+const preview = document.querySelector('#productPreview');
+const priceMax = document.querySelector('#priceMax');
+let activeCategory = 'all';
 const cartStorageKey = 'yc-nice-lady-cart';
 
 let products = [];
@@ -75,13 +78,22 @@ function syncCartWithStock() {
   saveCart();
 }
 
+function categoryFor(product) {
+  const text = `${product.name} ${product.description || ''}`.toLocaleLowerCase('es');
+  if (/pestañ|lash|rimel|rímel|ceja|eyelash|cluster/.test(text)) return 'pestanas';
+  if (/maquill|labial|base |corrector|rubor|sombra|delineador|polvo/.test(text)) return 'maquillaje';
+  return 'accesorios';
+}
+
 function renderProducts() {
   if (!products.length) {
     grid.innerHTML = '<p class="catalogue-empty">Aún no hay productos disponibles. Vuelve pronto ♡</p>';
     return;
   }
 
-  grid.innerHTML = products.map((product) => {
+  const visibleProducts = products.filter((product) => Number(product.price) <= Number(priceMax?.value || 500) && (activeCategory === 'all' || categoryFor(product) === activeCategory));
+  if (!visibleProducts.length) { grid.innerHTML = '<p class="catalogue-empty">No hay productos con estos filtros.</p>'; return; }
+  grid.innerHTML = visibleProducts.map((product) => {
     const image = imageUrl(product.image_path);
     const imageMarkup = image
       ? `<img src="${image}" alt="${escapeHtml(product.name)}" loading="lazy">`
@@ -89,7 +101,7 @@ function renderProducts() {
     const isOut = product.stock <= 0;
     return `
       <article class="product product-card">
-        <div class="product-img">${imageMarkup}</div>
+        <button class="product-img" type="button" data-preview-product="${product.id}" aria-label="Ver ${escapeHtml(product.name)}">${imageMarkup}<span class="zoom-hint">Ver foto</span></button>
         <div class="product-info">
           ${stockLabel(product.stock)}
           <h3>${escapeHtml(product.name)}</h3>
@@ -223,6 +235,31 @@ async function reserveCartStock(entries) {
   return payload;
 }
 
+async function shortenImageUrl(url) {
+  let cache = {};
+  try { cache = JSON.parse(localStorage.getItem('yc-nice-lady-bitly-links') || '{}'); } catch { cache = {}; }
+  if (cache[url]) return cache[url];
+  try {
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => controller.abort(), 8000);
+    const response = await fetch('/.netlify/functions/shorten-bitly', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url }),
+      signal: controller.signal
+    });
+    window.clearTimeout(timer);
+    const result = await response.json();
+    if (!response.ok || !result.link) return '';
+    cache[url] = result.link;
+    try { localStorage.setItem('yc-nice-lady-bitly-links', JSON.stringify(cache)); } catch { /* Se puede usar el enlace sin caché. */ }
+    return result.link;
+  } catch (error) {
+    console.warn('Bitly no pudo acortar la foto del producto:', error);
+    return '';
+  }
+}
+
 async function checkout() {
   if (!cartEntries().length) return;
   const phone = WHATSAPP_NUMBER.replace(/\D/g, '');
@@ -246,7 +283,12 @@ async function checkout() {
   }
 
   const total = entries.reduce((sum, { product, quantity }) => sum + Number(product.price) * quantity, 0);
-  const lines = entries.map(({ product, quantity }) => `• ${product.name} × ${quantity} — ${formatMoney(Number(product.price) * quantity)}`);
+  const lines = await Promise.all(entries.map(async ({ product, quantity }) => {
+    const photo = imageUrl(product.image_path);
+    const shortPhoto = photo ? await shortenImageUrl(photo) : '';
+    const photoLine = photo ? (shortPhoto ? `\nFoto: ${shortPhoto}` : '\nFoto: te la compartimos al confirmar disponibilidad.') : '';
+    return `• ${product.name} × ${quantity} — ${formatMoney(Number(product.price) * quantity)}${photoLine}`;
+  }));
   const message = ['Hola, quiero realizar este pedido en YC NICE LADY:', '', ...lines, '', `Total: ${formatMoney(total)}`, '', '¿Me confirman la disponibilidad, por favor?'].join('\n');
   checkoutButton.disabled = true;
   checkoutButton.textContent = 'Reservando…';
@@ -275,9 +317,33 @@ async function checkout() {
 }
 
 grid.addEventListener('click', (event) => {
+  const previewButton = event.target.closest('[data-preview-product]');
+  if (previewButton) {
+    const product = products.find((item) => item.id === previewButton.dataset.previewProduct);
+    if (product) {
+      document.querySelector('#previewImage').src = imageUrl(product.image_path);
+      document.querySelector('#previewImage').alt = product.name;
+      document.querySelector('#previewName').textContent = product.name;
+      document.querySelector('#previewPrice').textContent = formatMoney(product.price);
+      document.querySelector('#previewAdd').onclick = () => { addToCart(product.id); preview.close(); };
+      preview.showModal();
+    }
+    return;
+  }
   const button = event.target.closest('[data-add-product]');
   if (button) addToCart(button.dataset.addProduct);
 });
+
+document.querySelector('.category-tabs').addEventListener('click', (event) => {
+  const button = event.target.closest('[data-category]');
+  if (!button) return;
+  activeCategory = button.dataset.category;
+  document.querySelectorAll('[data-category]').forEach((tab) => tab.classList.toggle('is-active', tab === button));
+  renderProducts();
+});
+priceMax.addEventListener('input', () => { document.querySelector('#priceMaxLabel').textContent = formatMoney(priceMax.value); renderProducts(); });
+document.querySelector('.preview-close').addEventListener('click', () => preview.close());
+preview.addEventListener('click', (event) => { if (event.target === preview) preview.close(); });
 
 cartItemsEl.addEventListener('click', (event) => {
   const button = event.target.closest('[data-cart-action]');
