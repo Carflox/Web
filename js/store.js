@@ -259,8 +259,25 @@ async function checkout() {
   }
 
   const total = entries.reduce((sum, { product, quantity }) => sum + Number(product.price) * quantity, 0);
-  const lines = entries.map(({ product, quantity }) => `• ${product.name} × ${quantity} — ${formatMoney(Number(product.price) * quantity)}`);
-  const message = ['Hola, quiero realizar este pedido en YC NICE LADY:', '', ...lines, '', `Total: ${formatMoney(total)}`, '', '¿Me confirman la disponibilidad, por favor?'].join('\n');
+  const lines = entries.flatMap(({ product, quantity }) => {
+    const photo = imageUrl(product.image_path);
+    return [
+      `🛍️ *Producto:* ${product.name}`,
+      `📦 *Cantidad:* ${quantity} ${quantity === 1 ? 'unidad' : 'unidades'}`,
+      `💰 *Precio:* ${formatMoney(Number(product.price))}`,
+      `🖼️ *Foto del producto:* ${photo || 'No disponible'}`
+    ];
+  });
+  const message = [
+    'Hola, quiero realizar este pedido en YC NICE LADY:',
+    '',
+    ...lines,
+    '',
+    `*Total: ${formatMoney(total)}*`,
+    '',
+    '¿Me confirman si está disponible, por favor? También quisiera saber cómo coordinar la entrega.',
+    'Gracias.'
+  ].join('\n');
   checkoutButton.disabled = true;
   checkoutButton.textContent = 'Reservando…';
 
