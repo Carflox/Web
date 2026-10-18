@@ -14,6 +14,7 @@ const summary = document.querySelector('#productsSummary');
 const formTitle = document.querySelector('#formTitle');
 const resetFormButton = document.querySelector('#resetProductForm');
 const saveButton = document.querySelector('#saveProduct');
+const adminProductSearch = document.querySelector('#adminProductSearch');
 
 let products = [];
 let session = readSavedSession();
@@ -89,6 +90,10 @@ function categoryLabel(category) {
   return ({ pestanas: 'Pestañas', maquillaje: 'Maquillajes', accesorios: 'Accesorios' })[category] || 'Accesorios';
 }
 
+function normalizeSearchText(value = '') {
+  return String(value).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('es').trim();
+}
+
 function resetProductForm() {
   productForm.reset();
   productForm.elements.id.value = '';
@@ -101,13 +106,22 @@ function resetProductForm() {
 }
 
 function renderProducts() {
-  summary.textContent = `${products.length} producto${products.length === 1 ? '' : 's'} en total`;
+  const query = normalizeSearchText(adminProductSearch.value);
+  const visibleProducts = products.filter((product) => !query || normalizeSearchText(`${product.name} ${product.description || ''} ${categoryLabel(product.category)} ${product.category || ''}`).includes(query));
+  summary.textContent = query
+    ? `${visibleProducts.length} de ${products.length} productos encontrados`
+    : `${products.length} producto${products.length === 1 ? '' : 's'} en total`;
   if (!products.length) {
     productList.innerHTML = '<p class="empty-list">Aún no creaste ningún producto.</p>';
     return;
   }
 
-  productList.innerHTML = products.map((product) => {
+  if (!visibleProducts.length) {
+    productList.innerHTML = '<p class="empty-list">No se encontraron productos con esa búsqueda.</p>';
+    return;
+  }
+
+  productList.innerHTML = visibleProducts.map((product) => {
     const url = publicStorageUrl(product.image_path);
     const photo = url ? `<img src="${url}" alt="">` : '♡';
     return `
@@ -319,6 +333,7 @@ loginForm.addEventListener('submit', async (event) => {
 productForm.addEventListener('submit', saveProduct);
 resetFormButton.addEventListener('click', resetProductForm);
 document.querySelector('#refreshProducts').addEventListener('click', loadProducts);
+adminProductSearch.addEventListener('input', renderProducts);
 document.querySelector('#signOut').addEventListener('click', async () => {
   clearSession();
   resetProductForm();

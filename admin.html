@@ -6,7 +6,7 @@
   <meta name="robots" content="noindex, nofollow">
   <title>Administrar productos | YC NICE LADY</title>
   <link rel="icon" type="image/jpeg" href="img/logo.jpg">
-  <link rel="stylesheet" href="css/admin.css">
+  <link rel="stylesheet" href="css/admin.css?v=product-search-20261017-1">
 </head>
 <body>
   <header class="admin-header">
@@ -55,12 +55,13 @@
 
         <section class="panel products-list-panel" aria-labelledby="listTitle">
           <div class="panel-heading"><div><h2 id="listTitle">Productos creados</h2><p id="productsSummary">Cargando…</p></div><button class="text-button" id="refreshProducts" type="button">Actualizar</button></div>
+          <label class="admin-search"><span class="sr-only">Buscar productos del catálogo</span><input id="adminProductSearch" type="search" placeholder="Buscar por nombre, descripción o categoría…" autocomplete="off"></label>
           <div class="admin-products" id="adminProducts"></div>
         </section>
       </div>
     </section>
   </main>
   <script src="js/supabase-config.js"></script>
-  <script src="js/admin.js"></script>
+  <script src="js/admin.js?v=product-search-20261017-1"></script>
 </body>
 </html>

@@ -11,6 +11,7 @@ const cartMessage = document.querySelector('#cartMessage');
 const checkoutButton = document.querySelector('#checkoutButton');
 const preview = document.querySelector('#productPreview');
 const priceMax = document.querySelector('#priceMax');
+const productSearch = document.querySelector('#productSearch');
 let activeCategory = 'all';
 const cartStorageKey = 'yc-nice-lady-cart';
 
@@ -98,14 +99,25 @@ function categoryFor(product) {
   return 'accesorios';
 }
 
+function normalizeSearchText(value = '') {
+  return String(value).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('es').trim();
+}
+
 function renderProducts() {
   if (!products.length) {
     grid.innerHTML = '<p class="catalogue-empty">Aún no hay productos disponibles. Vuelve pronto ♡</p>';
     return;
   }
 
-  const visibleProducts = products.filter((product) => Number(product.price) <= Number(priceMax?.value || 500) && (activeCategory === 'all' || categoryFor(product) === activeCategory));
-  if (!visibleProducts.length) { grid.innerHTML = '<p class="catalogue-empty">No hay productos con estos filtros.</p>'; return; }
+  const query = normalizeSearchText(productSearch?.value);
+  const visibleProducts = products.filter((product) => {
+    const matchesSearch = !query || normalizeSearchText(`${product.name} ${product.description || ''} ${categoryFor(product)}`).includes(query);
+    return matchesSearch && Number(product.price) <= Number(priceMax?.value || 500) && (activeCategory === 'all' || categoryFor(product) === activeCategory);
+  });
+  if (status) status.textContent = query || activeCategory !== 'all' || Number(priceMax?.value || 500) < 500
+    ? `${visibleProducts.length} de ${products.length} productos disponibles`
+    : `${products.length} producto${products.length === 1 ? '' : 's'} disponible${products.length === 1 ? '' : 's'}`;
+  if (!visibleProducts.length) { grid.innerHTML = `<p class="catalogue-empty">${query ? 'No encontramos productos que coincidan con tu búsqueda.' : 'No hay productos con estos filtros.'}</p>`; return; }
   grid.innerHTML = visibleProducts.map((product) => {
     const image = imageUrl(product.image_path);
     const imageMarkup = image
@@ -342,6 +354,7 @@ document.querySelector('.category-tabs').addEventListener('click', (event) => {
   renderProducts();
 });
 priceMax.addEventListener('input', () => { document.querySelector('#priceMaxLabel').textContent = formatMoney(priceMax.value); renderProducts(); });
+productSearch.addEventListener('input', renderProducts);
 document.querySelector('.preview-close').addEventListener('click', () => preview.close());
 preview.addEventListener('click', (event) => { if (event.target === preview) preview.close(); });
 

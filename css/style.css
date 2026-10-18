@@ -295,3 +295,5 @@ footer{padding:25px 6%;background:#3e2932;color:#e9d8de;text-align:center;font-s
 
 /* Catálogo: tres columnas en pantallas Android y tablet */
 @media(max-width:900px){.product-grid{grid-template-columns:repeat(3,minmax(0,1fr)) !important}.product-card{min-width:0;width:100%}}
+
+.catalogue-search{display:block;flex:1;min-width:min(100%,240px)}.catalogue-search input,.admin-search input{width:100%;min-height:44px;border:1px solid #e8cbd5;border-radius:999px;padding:10px 15px;color:var(--ink);background:#fff;font:inherit;outline:none}.catalogue-search input:focus,.admin-search input:focus{border-color:#bd7089;box-shadow:0 0 0 3px rgba(196,127,148,.16)}.catalogue-search input::placeholder,.admin-search input::placeholder{color:#91757e}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
