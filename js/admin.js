@@ -148,13 +148,14 @@ async function isStoreAdmin() {
   })) === true;
 }
 
-async function loadProducts() {
+async function loadProducts({ preserveScroll = false, scrollTop = productList.scrollTop } = {}) {
   summary.textContent = 'Cargando…';
   productList.innerHTML = '<p class="loading">Cargando productos…</p>';
   try {
     const search = new URLSearchParams({ select: '*', order: 'created_at.desc' });
     products = await request(`/rest/v1/products?${search}`) || [];
     renderProducts();
+    if (preserveScroll) productList.scrollTop = scrollTop;
   } catch (error) {
     summary.textContent = 'No se pudo cargar';
     productList.innerHTML = '<p class="empty-list">No se pudo cargar el catálogo. Vuelve a iniciar sesión.</p>';
@@ -212,6 +213,7 @@ async function removeImage(imagePath) {
 
 async function saveProduct(event) {
   event.preventDefault();
+  const listScrollTop = productList.scrollTop;
   const form = new FormData(productForm);
   const file = form.get('image');
   const currentId = form.get('id');
@@ -262,7 +264,7 @@ async function saveProduct(event) {
     }
     resetProductForm();
     setMessage(productMessage, 'Producto guardado correctamente.');
-    await loadProducts();
+    await loadProducts({ preserveScroll: true, scrollTop: listScrollTop });
   } catch (error) {
     if (uploadedImagePath) removeImage(uploadedImagePath).catch(() => {});
     setMessage(productMessage, `No se pudo guardar: ${error.message}`, true);
@@ -334,6 +336,41 @@ productForm.addEventListener('submit', saveProduct);
 resetFormButton.addEventListener('click', resetProductForm);
 document.querySelector('#refreshProducts').addEventListener('click', loadProducts);
 adminProductSearch.addEventListener('input', renderProducts);
+function moveProductCarousel(direction) {
+  const cards = [...productList.querySelectorAll('.admin-product')];
+  if (!cards.length) return;
+
+  const maxScroll = Math.max(0, productList.scrollHeight - productList.clientHeight);
+  if (direction > 0 && productList.scrollTop >= maxScroll - 2) {
+    productList.scrollTo({ top: 0, behavior: 'smooth' });
+    return;
+  }
+  if (direction < 0 && productList.scrollTop <= 2) {
+    productList.scrollTo({ top: maxScroll, behavior: 'smooth' });
+    return;
+  }
+
+  const listTop = productList.getBoundingClientRect().top;
+  let currentIndex = -1;
+  cards.forEach((card, index) => {
+    const cardTop = card.getBoundingClientRect().top - listTop + productList.scrollTop;
+    if (cardTop <= productList.scrollTop + 2) currentIndex = index;
+  });
+  const nextIndex = currentIndex + direction;
+  if (nextIndex < 0) {
+    productList.scrollTo({ top: maxScroll, behavior: 'smooth' });
+    return;
+  }
+  if (nextIndex >= cards.length) {
+    productList.scrollTo({ top: 0, behavior: 'smooth' });
+    return;
+  }
+
+  const targetTop = cards[nextIndex].getBoundingClientRect().top - listTop + productList.scrollTop;
+  productList.scrollTo({ top: targetTop, behavior: 'smooth' });
+}
+document.querySelector('#previousProduct').addEventListener('click', () => moveProductCarousel(-1));
+document.querySelector('#nextProduct').addEventListener('click', () => moveProductCarousel(1));
 document.querySelector('#signOut').addEventListener('click', async () => {
   clearSession();
   resetProductForm();
