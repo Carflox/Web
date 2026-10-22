@@ -129,7 +129,7 @@ function renderProducts() {
   productList.innerHTML = visibleProducts.map((product) => {
     const url = publicStorageUrl(product.image_path);
     const photo = url
-      ? `<button class="admin-product-image admin-product-image-button" type="button" data-preview-product-image="${product.id}" aria-label="Ampliar foto de ${escapeHtml(product.name)}"><img src="${url}" alt=""></button>`
+      ? `<button class="admin-product-image admin-product-image-button" type="button" data-preview-product-image="${product.id}" aria-label="Ampliar foto de ${escapeHtml(product.name)}" title="Haz clic para ampliar la foto"><img src="${url}" alt=""><span aria-hidden="true">Ampliar</span></button>`
       : '<div class="admin-product-image">♡</div>';
     return `
       <article class="admin-product" draggable="${!adminProductSearch.value.trim()}" data-product-id="${product.id}">
