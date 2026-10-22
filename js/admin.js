@@ -15,8 +15,10 @@ const formTitle = document.querySelector('#formTitle');
 const resetFormButton = document.querySelector('#resetProductForm');
 const saveButton = document.querySelector('#saveProduct');
 const adminProductSearch = document.querySelector('#adminProductSearch');
+const orderStatus = document.querySelector('#adminOrderStatus');
 
 let products = [];
+let draggedProductId = null;
 let session = readSavedSession();
 
 function readSavedSession() {
@@ -125,7 +127,7 @@ function renderProducts() {
     const url = publicStorageUrl(product.image_path);
     const photo = url ? `<img src="${url}" alt="">` : '♡';
     return `
-      <article class="admin-product">
+      <article class="admin-product" draggable="${!adminProductSearch.value.trim()}" data-product-id="${product.id}">
         <div class="admin-product-image">${photo}</div>
         <div>
           <h3>${escapeHtml(product.name)}</h3>
@@ -152,13 +154,15 @@ async function loadProducts({ preserveScroll = false, scrollTop = productList.sc
   summary.textContent = 'Cargando…';
   productList.innerHTML = '<p class="loading">Cargando productos…</p>';
   try {
-    const search = new URLSearchParams({ select: '*', order: 'created_at.desc' });
+    const search = new URLSearchParams({ select: '*', order: 'sort_order.asc,created_at.desc' });
     products = await request(`/rest/v1/products?${search}`) || [];
     renderProducts();
     if (preserveScroll) productList.scrollTop = scrollTop;
   } catch (error) {
     summary.textContent = 'No se pudo cargar';
-    productList.innerHTML = '<p class="empty-list">No se pudo cargar el catálogo. Vuelve a iniciar sesión.</p>';
+    productList.innerHTML = /sort_order/i.test(error.message)
+      ? '<p class="empty-list">Para activar el reordenamiento, ejecuta primero supabase/add-product-sort-order.sql en el SQL Editor de Supabase.</p>'
+      : '<p class="empty-list">No se pudo cargar el catálogo. Vuelve a iniciar sesión.</p>';
     console.error('No se pudo cargar el panel:', error);
   }
 }
@@ -250,13 +254,19 @@ async function saveProduct(event) {
       imagePath = uploadedImagePath;
     }
 
+    const productData = {
+      id, name, description, category, price, stock, image_path: imagePath,
+      is_active: form.get('isActive') === 'on'
+    };
+    if (!currentId) {
+      const firstOrder = products.length ? Math.min(...products.map((product) => Number(product.sort_order) || 0)) : 0;
+      productData.sort_order = firstOrder - 1;
+    }
+
     await request('/rest/v1/products?on_conflict=id', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' },
-      body: JSON.stringify({
-        id, name, description, category, price, stock, image_path: imagePath,
-        is_active: form.get('isActive') === 'on'
-      })
+      body: JSON.stringify(productData)
     });
 
     if (uploadedImagePath && previousImagePath && previousImagePath !== uploadedImagePath) {
@@ -336,41 +346,71 @@ productForm.addEventListener('submit', saveProduct);
 resetFormButton.addEventListener('click', resetProductForm);
 document.querySelector('#refreshProducts').addEventListener('click', loadProducts);
 adminProductSearch.addEventListener('input', renderProducts);
-function moveProductCarousel(direction) {
-  const cards = [...productList.querySelectorAll('.admin-product')];
-  if (!cards.length) return;
+productList.addEventListener('dragstart', (event) => {
+  const card = event.target.closest('.admin-product');
+  if (!card || adminProductSearch.value.trim()) { event.preventDefault(); return; }
+  draggedProductId = card.dataset.productId;
+  event.dataTransfer.effectAllowed = 'move';
+  event.dataTransfer.setData('text/plain', draggedProductId);
+  requestAnimationFrame(() => card.classList.add('is-dragging'));
+});
+productList.addEventListener('dragover', (event) => {
+  const target = event.target.closest('.admin-product');
+  if (!draggedProductId || !target || target.dataset.productId === draggedProductId) return;
+  event.preventDefault();
+  event.dataTransfer.dropEffect = 'move';
+  productList.querySelectorAll('.drop-before, .drop-after').forEach((card) => card.classList.remove('drop-before', 'drop-after'));
+  const rect = target.getBoundingClientRect();
+  target.classList.add(event.clientY < rect.top + rect.height / 2 ? 'drop-before' : 'drop-after');
+});
+productList.addEventListener('drop', async (event) => {
+  const target = event.target.closest('.admin-product');
+  const sourceId = draggedProductId || event.dataTransfer.getData('text/plain');
+  if (!sourceId || !target || target.dataset.productId === sourceId) return;
+  event.preventDefault();
+  const rect = target.getBoundingClientRect();
+  const insertAfter = event.clientY >= rect.top + rect.height / 2;
+  const oldProducts = products.map((product) => ({ ...product }));
+  const sourceIndex = products.findIndex((product) => product.id === sourceId);
+  const targetIndex = products.findIndex((product) => product.id === target.dataset.productId);
+  if (sourceIndex < 0 || targetIndex < 0) return;
 
-  const maxScroll = Math.max(0, productList.scrollHeight - productList.clientHeight);
-  if (direction > 0 && productList.scrollTop >= maxScroll - 2) {
-    productList.scrollTo({ top: 0, behavior: 'smooth' });
-    return;
-  }
-  if (direction < 0 && productList.scrollTop <= 2) {
-    productList.scrollTo({ top: maxScroll, behavior: 'smooth' });
-    return;
-  }
+  const reordered = products.map((product) => ({ ...product }));
+  const [movedProduct] = reordered.splice(sourceIndex, 1);
+  let insertIndex = targetIndex + (insertAfter ? 1 : 0);
+  if (sourceIndex < insertIndex) insertIndex -= 1;
+  reordered.splice(insertIndex, 0, movedProduct);
+  if (insertIndex === sourceIndex) return;
 
-  const listTop = productList.getBoundingClientRect().top;
-  let currentIndex = -1;
-  cards.forEach((card, index) => {
-    const cardTop = card.getBoundingClientRect().top - listTop + productList.scrollTop;
-    if (cardTop <= productList.scrollTop + 2) currentIndex = index;
-  });
-  const nextIndex = currentIndex + direction;
-  if (nextIndex < 0) {
-    productList.scrollTo({ top: maxScroll, behavior: 'smooth' });
-    return;
-  }
-  if (nextIndex >= cards.length) {
-    productList.scrollTo({ top: 0, behavior: 'smooth' });
-    return;
-  }
+  const previousOrder = reordered[insertIndex - 1]?.sort_order;
+  const nextOrder = reordered[insertIndex + 1]?.sort_order;
+  movedProduct.sort_order = previousOrder == null ? Number(nextOrder ?? 0) - 1
+    : nextOrder == null ? Number(previousOrder) + 1
+      : (Number(previousOrder) + Number(nextOrder)) / 2;
+  const listScrollTop = productList.scrollTop;
+  products = reordered;
+  renderProducts();
+  productList.scrollTop = listScrollTop;
+  orderStatus.textContent = 'Guardando el nuevo orden…';
 
-  const targetTop = cards[nextIndex].getBoundingClientRect().top - listTop + productList.scrollTop;
-  productList.scrollTo({ top: targetTop, behavior: 'smooth' });
-}
-document.querySelector('#previousProduct').addEventListener('click', () => moveProductCarousel(-1));
-document.querySelector('#nextProduct').addEventListener('click', () => moveProductCarousel(1));
+  try {
+    await request(`/rest/v1/products?id=eq.${encodeURIComponent(movedProduct.id)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+      body: JSON.stringify({ sort_order: movedProduct.sort_order })
+    });
+    orderStatus.textContent = 'Orden actualizado.';
+  } catch (error) {
+    products = oldProducts;
+    renderProducts();
+    productList.scrollTop = listScrollTop;
+    orderStatus.textContent = `No se pudo guardar el orden: ${error.message}`;
+  }
+});
+productList.addEventListener('dragend', () => {
+  draggedProductId = null;
+  productList.querySelectorAll('.is-dragging, .drop-before, .drop-after').forEach((card) => card.classList.remove('is-dragging', 'drop-before', 'drop-after'));
+});
 document.querySelector('#signOut').addEventListener('click', async () => {
   clearSession();
   resetProductForm();
