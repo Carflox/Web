@@ -16,6 +16,9 @@ const resetFormButton = document.querySelector('#resetProductForm');
 const saveButton = document.querySelector('#saveProduct');
 const adminProductSearch = document.querySelector('#adminProductSearch');
 const orderStatus = document.querySelector('#adminOrderStatus');
+const imagePreview = document.querySelector('#adminImagePreview');
+const previewImage = document.querySelector('#adminPreviewImage');
+const previewCaption = document.querySelector('#adminPreviewCaption');
 
 let products = [];
 let draggedProductId = null;
@@ -125,10 +128,12 @@ function renderProducts() {
 
   productList.innerHTML = visibleProducts.map((product) => {
     const url = publicStorageUrl(product.image_path);
-    const photo = url ? `<img src="${url}" alt="">` : '♡';
+    const photo = url
+      ? `<button class="admin-product-image admin-product-image-button" type="button" data-preview-product-image="${product.id}" aria-label="Ampliar foto de ${escapeHtml(product.name)}"><img src="${url}" alt=""></button>`
+      : '<div class="admin-product-image">♡</div>';
     return `
       <article class="admin-product" draggable="${!adminProductSearch.value.trim()}" data-product-id="${product.id}">
-        <div class="admin-product-image">${photo}</div>
+        ${photo}
         <div>
           <h3>${escapeHtml(product.name)}</h3>
           <p>${escapeHtml(product.description || 'Sin descripción')}</p>
@@ -417,12 +422,26 @@ document.querySelector('#signOut').addEventListener('click', async () => {
   await showAdminForCurrentSession();
 });
 productList.addEventListener('click', (event) => {
+  const previewButton = event.target.closest('[data-preview-product-image]');
+  if (previewButton) {
+    const product = products.find((item) => item.id === previewButton.dataset.previewProductImage);
+    if (!product?.image_path) return;
+    previewImage.src = publicStorageUrl(product.image_path);
+    previewImage.alt = product.name;
+    previewCaption.textContent = product.name;
+    imagePreview.showModal();
+    return;
+  }
   const button = event.target.closest('[data-action]');
   if (!button) return;
   const product = products.find((item) => item.id === button.dataset.productId);
   if (!product) return;
   if (button.dataset.action === 'edit') editProduct(product);
   if (button.dataset.action === 'delete') deleteProduct(product);
+});
+document.querySelector('#closeAdminImagePreview').addEventListener('click', () => imagePreview.close());
+imagePreview.addEventListener('click', (event) => {
+  if (event.target === imagePreview) imagePreview.close();
 });
 
 showAdminForCurrentSession();
