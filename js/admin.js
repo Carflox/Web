@@ -92,7 +92,7 @@ function formatMoney(value) {
 }
 
 function categoryLabel(category) {
-  return ({ pestanas: 'Pestañas', libros: 'Libros', racimos: 'Racimos', kits: 'Kits', maquillaje: 'Maquillajes', accesorios: 'Accesorios' })[category] || 'Accesorios';
+  return ({ libros: 'Libros', racimos: 'Racimos', kits: 'Kits', maquillaje: 'Maquillajes', accesorios: 'Accesorios' })[category] || 'Accesorios';
 }
 
 function normalizeSearchText(value = '') {

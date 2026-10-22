@@ -93,12 +93,12 @@ function syncCartWithStock() {
 
 function categoryFor(product) {
   const category = normalizeSearchText(product.category || '');
-  if (['pestanas', 'libros', 'racimos', 'kits', 'maquillaje', 'accesorios'].includes(category)) return category;
+  if (['libros', 'racimos', 'kits', 'maquillaje', 'accesorios'].includes(category)) return category;
   const text = normalizeSearchText(`${product.name} ${product.description || ''}`);
   if (/\blibro\b/.test(text)) return 'libros';
   if (/\bkit\b/.test(text)) return 'kits';
   if (/racimo|cluster|wispy|volumen|efecto rimel|efecto rímel/.test(text)) return 'racimos';
-  if (/pestañ|lash|rimel|ceja|eyelash/.test(text)) return 'pestanas';
+  if (/pestañ|lash|rimel|ceja|eyelash/.test(text)) return 'accesorios';
   if (/maquill|labial|base |corrector|rubor|sombra|delineador|polvo/.test(text)) return 'maquillaje';
   return 'accesorios';
 }
