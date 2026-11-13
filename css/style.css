@@ -317,3 +317,11 @@ footer{padding:25px 6%;background:#3e2932;color:#e9d8de;text-align:center;font-s
 .product-card .product-img{position:relative;overflow:hidden}
 .product-card .zoom-hint{right:8px;bottom:8px;max-width:calc(100% - 16px);padding:4px 8px;font-size:clamp(.58rem,2.3vw,.68rem);line-height:1.1;white-space:nowrap}
 @media(max-width:420px){.cart-dialog .cart-footer{grid-template-columns:minmax(0,1fr)}.cart-dialog .cart-footer>div{min-width:0}.cart-dialog .cart-footer-actions{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+/* Pie adaptable para la vista ampliada del producto. */
+.product-preview .preview-caption{display:grid;grid-template-columns:minmax(0,1fr) max-content max-content;align-items:center;gap:10px 14px}
+.product-preview .preview-caption h2{min-width:0;margin:0;font-size:clamp(1rem,2vw,1.3rem);line-height:1.2;overflow-wrap:anywhere}
+.product-preview .preview-caption p{margin:0;white-space:nowrap;font-size:1rem}
+.product-preview .preview-caption .add-cart{grid-column:auto;width:auto;min-width:max-content;padding:10px 14px;font-size:.8rem;line-height:1.15;white-space:nowrap}
+@media(max-width:720px){.product-preview .preview-caption{grid-template-columns:minmax(0,1fr) auto;gap:8px 12px}.product-preview .preview-caption h2{grid-column:1/-1;font-size:1.05rem}.product-preview .preview-caption p{justify-self:start}.product-preview .preview-caption .add-cart{grid-column:auto}}
+@media(max-width:380px){.product-preview .preview-caption{grid-template-columns:minmax(0,1fr)}.product-preview .preview-caption h2,.product-preview .preview-caption p,.product-preview .preview-caption .add-cart{grid-column:1}.product-preview .preview-caption .add-cart{width:100%;white-space:normal}}
