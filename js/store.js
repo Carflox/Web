@@ -352,7 +352,11 @@ grid.addEventListener('click', (event) => {
     return;
   }
   const button = event.target.closest('[data-add-product]');
-  if (button) addToCart(button.dataset.addProduct);
+  if (button) {
+    addToCart(button.dataset.addProduct);
+    renderCart();
+    dialog.showModal();
+  }
 });
 
 document.querySelector('.category-tabs').addEventListener('click', (event) => {
