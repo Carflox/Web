@@ -171,7 +171,7 @@ function renderCart() {
       <div>
         <div class="cart-line-total">${formatMoney(Number(product.price) * quantity)}</div>
         <div class="quantity-actions">
-          <button type="button" data-cart-action="decrease" data-product-id="${product.id}" aria-label="Restar una unidad de ${escapeHtml(product.name)}">−</button>
+          <button type="button" data-cart-action="decrease" data-product-id="${product.id}" aria-label="Restar una unidad de ${escapeHtml(product.name)}" ${quantity <= 1 ? 'disabled' : ''}>−</button>
           <strong>${quantity}</strong>
           <button type="button" data-cart-action="increase" data-product-id="${product.id}" aria-label="Sumar una unidad de ${escapeHtml(product.name)}" ${quantity >= product.stock ? 'disabled' : ''}>+</button>
           <button class="remove-line" type="button" data-cart-action="remove" data-product-id="${product.id}">Quitar</button>
@@ -341,7 +341,12 @@ grid.addEventListener('click', (event) => {
       document.querySelector('#previewImage').alt = product.name;
       document.querySelector('#previewName').textContent = product.name;
       document.querySelector('#previewPrice').textContent = formatMoney(product.price);
-      document.querySelector('#previewAdd').onclick = () => { addToCart(product.id); preview.close(); };
+      document.querySelector('#previewAdd').onclick = () => {
+        addToCart(product.id);
+        preview.close();
+        renderCart();
+        dialog.showModal();
+      };
       preview.showModal();
     }
     return;
@@ -368,7 +373,7 @@ cartItemsEl.addEventListener('click', (event) => {
   const id = button.dataset.productId;
   const action = button.dataset.cartAction;
   const product = products.find((item) => item.id === id);
-  if (action === 'remove' || (action === 'decrease' && getCartQuantity(id) <= 1)) delete cart[id];
+  if (action === 'remove') delete cart[id];
   else if (action === 'decrease') cart[id] = getCartQuantity(id) - 1;
   else if (action === 'increase' && product) cart[id] = Math.min(getCartQuantity(id) + 1, product.stock);
   cartMessage.textContent = '';
@@ -380,6 +385,7 @@ document.querySelector('#openCart').addEventListener('click', () => {
   dialog.showModal();
 });
 document.querySelector('#closeCart').addEventListener('click', () => dialog.close());
+document.querySelector('#continueShopping').addEventListener('click', () => dialog.close());
 dialog.addEventListener('click', (event) => { if (event.target === dialog) dialog.close(); });
 checkoutButton.addEventListener('click', checkout);
 

@@ -250,6 +250,9 @@ footer{padding:25px 6%;background:#3e2932;color:#e9d8de;text-align:center;font-s
 .product-preview{position:fixed;inset:0;margin:auto;}
 /* Mantén el carrito centrado y evita que sus filas se compriman */
 .cart-dialog{position:fixed;inset:0;margin:auto;}
+.cart-footer-actions{display:flex;align-items:center;gap:10px}
+.continue-shopping-btn{border:1px solid #efd0d9;cursor:pointer;white-space:nowrap}
+@media(max-width:520px){.cart-footer-actions{width:100%;flex-direction:column}.cart-footer-actions button{width:100%;max-width:none}}
 .cart-line{grid-template-columns:minmax(0,1fr) auto;align-items:center;}
 .cart-line>div:first-of-type{min-width:0;}
 .cart-line h3,.cart-line p{overflow-wrap:normal;word-break:normal;}
