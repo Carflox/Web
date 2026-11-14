@@ -5,12 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="robots" content="noindex, nofollow">
   <title>Administrar productos | YC NICE LADY</title>
-  <link rel="icon" type="image/png" href="img/logo.png">
-  <link rel="stylesheet" href="css/admin.css?v=admin-product-image-zoom-20261022-2">
+  <link rel="icon" type="image/png" href="img/logo-transparent.png?v=20261114-1">
+  <link rel="stylesheet" href="css/admin.css?v=logo-transparent-20261114-1">
 </head>
 <body>
   <header class="admin-header">
-    <a href="index.html" class="admin-brand"><img src="img/logo.png" alt=""><span>YC NICE LADY</span></a>
+    <a href="index.html" class="admin-brand"><img src="img/logo-transparent.png?v=20261114-1" alt=""><span>YC NICE LADY</span></a>
     <a href="index.html" class="back-to-store">Ver tienda ↗</a>
   </header>
 
@@ -42,8 +42,9 @@
             <label>Nombre del producto<input type="text" name="name" maxlength="90" required></label>
             <label>Descripción<textarea name="description" rows="3" maxlength="280" placeholder="Descripción breve del producto"></textarea></label>
             <label>Categoría<select name="category" required><option value="libros">Libros</option><option value="set">Set</option><option value="kits">Kits</option><option value="maquillaje">Maquillajes</option><option value="accesorios" selected>Accesorios</option></select></label>
-            <div class="form-columns">
-              <label>Precio (S/)<input type="number" name="price" min="0" step="0.01" inputmode="decimal" required></label>
+            <div class="form-columns product-pricing">
+              <label>Precio de venta (S/)<input type="number" name="price" min="0" step="0.01" inputmode="decimal" required></label>
+              <label>Precio de costo (S/)<input type="number" name="cost_price" min="0" step="0.01" inputmode="decimal" value="0" required><small>Lo que pagas por cada unidad.</small></label>
               <label>Stock disponible<input type="number" name="stock" min="0" step="1" inputmode="numeric" required></label>
             </div>
             <label class="file-label">Foto del producto<input type="file" name="image" accept="image/jpeg,image/png,image/webp"><small>JPG, PNG o WEBP. Máximo 5 MB.</small></label>
@@ -66,11 +67,11 @@
       <div class="finance-content">
         <div class="analytics-cards" id="financeTotals"></div>
         <div class="finance-forms">
-          <form id="financeSaleForm" class="finance-form"><h3>Registrar venta confirmada</h3><label>Descripción<input name="description" maxlength="160" placeholder="Ej. Pedido confirmado" required></label><label>Monto recibido (S/)<input name="amount" type="number" min="0.01" step="0.01" required></label><button class="button" type="submit">Guardar venta</button></form>
+          <form id="financeSaleForm" class="finance-form"><h3>Registrar venta confirmada</h3><label>Producto para aplicar costo<select name="product_id" id="financeSaleProduct"><option value="">Venta general (sin costo automático)</option></select></label><div class="form-columns"><label>Cantidad<input name="quantity" type="number" min="1" step="1" value="1" required></label><label>Descripción<input name="description" maxlength="160" placeholder="Ej. Pedido confirmado" required></label></div><label>Monto recibido (S/)<input name="amount" type="number" min="0.01" step="0.01" required></label><button class="button" type="submit">Guardar venta</button></form>
           <form id="financeExpenseForm" class="finance-form"><h3>Registrar gasto</h3><label>Descripción<input name="description" maxlength="160" placeholder="Ej. Gasolina para delivery" required></label><label>Categoría<select name="category" required><option value="delivery">Delivery</option><option value="gasolina">Gasolina</option><option value="material_moto">Materiales de moto</option><option value="productos">Compra de productos</option><option value="empaque">Empaques</option><option value="otros">Otros gastos</option></select></label><label>Monto pagado (S/)<input name="amount" type="number" min="0.01" step="0.01" required></label><button class="button" type="submit">Guardar gasto</button></form>
         </div>
         <div class="analytics-charts finance-charts"><section><h3>Ventas por día (últimos 14 días)</h3><div id="financeTrendChart" class="analytics-chart"></div></section><section><h3>Ventas frente a gastos</h3><div id="financeShareChart" class="analytics-chart"></div></section></div><section class="analytics-history chart-section"><h3>Gastos por categoría</h3><div id="expenseBreakdown"></div></section>
-        <section class="analytics-history"><h3>Movimientos financieros</h3><div class="analytics-table-wrap"><table><thead><tr><th>Fecha</th><th>Tipo</th><th>Descripción</th><th>Categoría</th><th>Monto</th><th></th></tr></thead><tbody id="financeLedger"></tbody></table></div></section>
+        <section class="analytics-history"><h3>Movimientos financieros</h3><div class="analytics-table-wrap"><table><thead><tr><th>Fecha</th><th>Tipo</th><th>Descripción</th><th>Categoría</th><th>Monto</th><th>Costo del producto</th><th></th></tr></thead><tbody id="financeLedger"></tbody></table></div></section>
       </div>
     </dialog>
     <dialog class="admin-analytics" id="adminAnalytics" aria-labelledby="analyticsTitle">
@@ -89,6 +90,6 @@
     </dialog>
   </main>
   <script src="js/supabase-config.js"></script>
-  <script src="js/admin.js?v=charts-20261114-1"></script>
+  <script src="js/admin.js?v=cost-price-20261114-1"></script>
 </body>
 </html>

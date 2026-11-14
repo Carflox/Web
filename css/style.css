@@ -325,3 +325,8 @@ footer{padding:25px 6%;background:#3e2932;color:#e9d8de;text-align:center;font-s
 .product-preview .preview-caption .add-cart{grid-column:auto;width:auto;min-width:max-content;padding:10px 14px;font-size:.8rem;line-height:1.15;white-space:nowrap}
 @media(max-width:720px){.product-preview .preview-caption{grid-template-columns:minmax(0,1fr) auto;gap:8px 12px}.product-preview .preview-caption h2{grid-column:1/-1;font-size:1.05rem}.product-preview .preview-caption p{justify-self:start}.product-preview .preview-caption .add-cart{grid-column:auto}}
 @media(max-width:380px){.product-preview .preview-caption{grid-template-columns:minmax(0,1fr)}.product-preview .preview-caption h2,.product-preview .preview-caption p,.product-preview .preview-caption .add-cart{grid-column:1}.product-preview .preview-caption .add-cart{width:100%;white-space:normal}}
+
+/* Logo sin fondo: sombra ligera alrededor del sello */
+.brand img{background:transparent;box-shadow:0 5px 15px rgba(143,83,105,.19)}
+.logo-showcase{padding:0;background:transparent;box-shadow:none}
+.main-logo{object-fit:contain;box-shadow:none;filter:drop-shadow(0 10px 22px rgba(143,83,105,.2))}.brand img,.main-logo{clip-path:circle(47% at 50% 50%)}

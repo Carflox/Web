@@ -137,7 +137,7 @@ function renderProducts() {
         <div>
           <h3>${escapeHtml(product.name)}</h3>
           <p>${escapeHtml(product.description || 'Sin descripción')}</p>
-          <div class="admin-product-meta"><span>${formatMoney(product.price)}</span><span>Stock: ${product.stock}</span><span>${categoryLabel(product.category)}</span><span class="visibility ${product.is_active ? '' : 'hidden'}">${product.is_active ? 'Visible' : 'Oculto'}</span></div>
+          <div class="admin-product-meta"><span>Venta ${formatMoney(product.price)}</span><span>Costo ${formatMoney(product.cost_price)}</span><span>Margen ${formatMoney(Number(product.price)-Number(product.cost_price||0))}</span><span>Stock: ${product.stock}</span><span>${categoryLabel(product.category)}</span><span class="visibility ${product.is_active ? '' : 'hidden'}">${product.is_active ? 'Visible' : 'Oculto'}</span></div>
         </div>
         <div class="row-actions">
           <button type="button" data-action="edit" data-product-id="${product.id}">Editar</button>
@@ -179,6 +179,7 @@ function editProduct(product) {
   productForm.elements.description.value = product.description || '';
   productForm.elements.category.value = product.category || 'accesorios';
   productForm.elements.price.value = product.price;
+  productForm.elements.cost_price.value = Number(product.cost_price || 0);
   productForm.elements.stock.value = product.stock;
   productForm.elements.isActive.checked = product.is_active;
   formTitle.textContent = `Editar: ${product.name}`;
@@ -231,9 +232,10 @@ async function saveProduct(event) {
   const description = form.get('description').trim();
   const category = form.get('category');
   const price = Number(form.get('price'));
+  const costPrice = Number(form.get('cost_price'));
   const stock = Number(form.get('stock'));
 
-  if (!Number.isFinite(price) || price < 0 || !Number.isInteger(stock) || stock < 0) {
+  if (!Number.isFinite(price) || price < 0 || !Number.isFinite(costPrice) || costPrice < 0 || !Number.isInteger(stock) || stock < 0) {
     setMessage(productMessage, 'Revisa el precio y el stock.', true);
     return;
   }
@@ -260,7 +262,7 @@ async function saveProduct(event) {
     }
 
     const productData = {
-      id, name, description, category, price, stock, image_path: imagePath,
+      id, name, description, category, price, cost_price: costPrice, stock, image_path: imagePath,
       is_active: form.get('isActive') === 'on'
     };
     if (!currentId) {
@@ -497,7 +499,7 @@ async function loadFinanceEntries() {
   try {
     let all = [], offset = 0, page;
     do {
-      page = await request(`/rest/v1/store_finance_entries?select=id,entry_type,description,category,amount,created_at&order=created_at.desc&limit=1000&offset=${offset}`);
+      page = await request(`/rest/v1/store_finance_entries?select=id,entry_type,description,category,amount,product_id,quantity,cost_amount,created_at&order=created_at.desc&limit=1000&offset=${offset}`);
       all.push(...(page || [])); offset += 1000;
     } while (page && page.length === 1000);
     paintFinance(all);
@@ -562,3 +564,63 @@ paintAnalytics=function(events){paintAnalyticsWithCharts(events);const adds=even
 const paintFinanceWithCharts=paintFinance;
 paintFinance=function(entries){paintFinanceWithCharts(entries);const dayKey=value=>new Intl.DateTimeFormat('en-CA',{timeZone:'America/Lima',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(value));const today=new Date();const days=Array.from({length:14},(_,index)=>{const date=new Date(today);date.setDate(today.getDate()-13+index);const key=dayKey(date);const dayEntries=entries.filter(entry=>dayKey(entry.created_at)===key);return{label:new Intl.DateTimeFormat('es-PE',{timeZone:'America/Lima',day:'2-digit',month:'2-digit'}).format(date),value:dayEntries.filter(entry=>entry.entry_type==='sale').reduce((sum,entry)=>sum+Number(entry.amount),0)}});renderInteractiveChart(document.querySelector('#financeTrendChart'),days,'line','vertical');const sales=entries.filter(entry=>entry.entry_type==='sale').reduce((sum,entry)=>sum+Number(entry.amount),0),expenses=entries.filter(entry=>entry.entry_type==='expense').reduce((sum,entry)=>sum+Number(entry.amount),0);renderInteractiveChart(document.querySelector('#financeShareChart'),[{label:'Ventas',value:sales,color:'#54a17c'},{label:'Gastos',value:expenses,color:'#d76b83'}],'pie','vertical');const grouped=new Map();entries.filter(entry=>entry.entry_type==='expense').forEach(entry=>grouped.set(entry.category,(grouped.get(entry.category)||0)+Number(entry.amount)));renderInteractiveChart(document.querySelector('#expenseBreakdown'),[...grouped].sort((a,b)=>b[1]-a[1]).map(([category,value])=>({label:financeCategoryLabels[category]||category,value})),'bar','horizontal')};
 document.addEventListener('change',event=>{const chart=event.target.closest('[data-chart-mode], [data-chart-orientation]')?.closest('.analytics-chart');if(chart?.chartPoints)renderInteractiveChart(chart,chart.chartPoints)});
+
+// Enlace del costo de cada producto con las ventas confirmadas de Finanzas.
+const financeSaleProduct = document.querySelector('#financeSaleProduct');
+function refreshFinanceSaleProducts() {
+  const selected = financeSaleProduct.value;
+  financeSaleProduct.innerHTML = '<option value="">Venta general (sin costo automático)</option>' + products.map(product => `<option value="${escapeHtml(product.id)}">${escapeHtml(product.name)} · costo ${financeMoney(product.cost_price)}</option>`).join('');
+  if (products.some(product => String(product.id) === selected)) financeSaleProduct.value = selected;
+}
+function syncFinanceSaleProduct() {
+  const product = products.find(item => String(item.id) === financeSaleProduct.value);
+  if (!product) return;
+  const form = document.querySelector('#financeSaleForm');
+  const quantity = Math.max(1, Number(form.elements.quantity.value) || 1);
+  form.elements.description.value = `${product.name} × ${quantity}`;
+  form.elements.amount.value = (Number(product.price) * quantity).toFixed(2);
+}
+document.querySelector('#openFinance').addEventListener('click', refreshFinanceSaleProducts);
+financeSaleProduct.addEventListener('change', syncFinanceSaleProduct);
+document.querySelector('#financeSaleForm').elements.quantity.addEventListener('input', syncFinanceSaleProduct);
+const submitFinanceWithProductCost = submitFinance;
+submitFinance = async function(form, entryType) {
+  if (entryType !== 'sale') return submitFinanceWithProductCost(form, entryType);
+  const data = new FormData(form);
+  const productId = String(data.get('product_id') || '');
+  const product = products.find(item => String(item.id) === productId);
+  const quantity = Number(data.get('quantity'));
+  const description = String(data.get('description') || '').trim();
+  const amount = Number(data.get('amount'));
+  if (!description || !Number.isInteger(quantity) || quantity < 1 || !Number.isFinite(amount) || amount <= 0) {
+    financeStatus.textContent = 'Revisa el producto, la cantidad y el monto recibido.'; return;
+  }
+  const costAmount = product ? Number(product.cost_price || 0) * quantity : 0;
+  const button = form.querySelector('button[type="submit"]'); button.disabled = true;
+  try {
+    await request('/rest/v1/store_finance_entries', { method: 'POST', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' }, body: JSON.stringify({ entry_type: 'sale', category: 'sale', description, amount, product_id: product?.id || null, quantity, cost_amount: costAmount }) });
+    form.reset(); form.elements.quantity.value = '1'; financeSaleProduct.value = ''; await loadFinanceEntries(); financeStatus.textContent = `Venta registrada; costo aplicado: ${financeMoney(costAmount)}.`;
+  } catch (error) {
+    financeStatus.textContent = /cost_amount|product_id|quantity|schema cache|column/i.test(error.message) ? 'Actualiza Supabase ejecutando supabase/add-product-cost-and-finance.sql en SQL Editor.' : `No se pudo guardar: ${error.message}`;
+  } finally { button.disabled = false; }
+};
+const paintFinanceWithProductCost = paintFinance;
+paintFinance = function(entries) {
+  paintFinanceWithProductCost(entries);
+  const sales=entries.filter(entry=>entry.entry_type==='sale').reduce((sum,entry)=>sum+Number(entry.amount),0);
+  const expenses=entries.filter(entry=>entry.entry_type==='expense').reduce((sum,entry)=>sum+Number(entry.amount),0);
+  const productCosts=entries.filter(entry=>entry.entry_type==='sale').reduce((sum,entry)=>sum+Number(entry.cost_amount||0),0);
+  financeTotals.innerHTML=`<article><span>Ventas confirmadas</span><strong>${financeMoney(sales)}</strong></article><article><span>Gastos registrados</span><strong>${financeMoney(expenses)}</strong></article><article><span>Costo de productos vendidos</span><strong>${financeMoney(productCosts)}</strong></article><article><span>Ganancia neta estimada</span><strong>${financeMoney(sales-expenses-productCosts)}</strong></article>`;
+  const grouped=new Map();entries.filter(entry=>entry.entry_type==='expense').forEach(entry=>grouped.set(entry.category,(grouped.get(entry.category)||0)+Number(entry.amount)));
+  if(productCosts) grouped.set('costo_productos',productCosts);
+  renderInteractiveChart(document.querySelector('#expenseBreakdown'),[...grouped].sort((a,b)=>b[1]-a[1]).map(([category,value])=>({label:category==='costo_productos'?'Costo de productos vendidos':financeCategoryLabels[category]||category,value})),'bar','horizontal');
+  financeLedger.innerHTML=entries.map(entry=>`<tr><td>${financeDate(entry.created_at)}</td><td>${entry.entry_type==='sale'?'Venta':'Gasto'}</td><td>${escapeHtml(entry.description)}</td><td>${escapeHtml(entry.entry_type==='sale'&&entry.product_id?(products.find(product=>String(product.id)===String(entry.product_id))?.name||'Producto'):financeCategoryLabels[entry.category]||entry.category)}</td><td>${financeMoney(entry.amount)}</td><td>${entry.entry_type==='sale'?`${Number(entry.quantity||1)} u. · ${financeMoney(entry.cost_amount)}`:'—'}</td><td><button class="finance-delete" type="button" data-finance-delete="${entry.id}" aria-label="Eliminar movimiento">Eliminar</button></td></tr>`).join('')||'<tr><td colspan="7">Aún no hay movimientos financieros.</td></tr>';
+};
+const paintFinanceChartsWithCosts = paintFinance;
+paintFinance = function(entries) {
+  paintFinanceChartsWithCosts(entries);
+  const sales=entries.filter(entry=>entry.entry_type==='sale').reduce((sum,entry)=>sum+Number(entry.amount),0);
+  const expenses=entries.filter(entry=>entry.entry_type==='expense').reduce((sum,entry)=>sum+Number(entry.amount),0);
+  const productCosts=entries.filter(entry=>entry.entry_type==='sale').reduce((sum,entry)=>sum+Number(entry.cost_amount||0),0);
+  renderInteractiveChart(document.querySelector('#financeShareChart'),[{label:'Ventas',value:sales,color:'#54a17c'},{label:'Gastos operativos',value:expenses,color:'#d76b83'},{label:'Costo de productos vendidos',value:productCosts,color:'#d89a55'}],'pie','vertical');
+};
