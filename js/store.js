@@ -80,6 +80,27 @@ function getCartQuantity(id) {
   return Number(cart[id] || 0);
 }
 
+function trackStoreEvent(eventType, { product = null, quantity = 1 } = {}) {
+  if (!storeIsConfigured || !['add_to_cart', 'whatsapp_click'].includes(eventType)) return;
+  const payload = {
+    event_type: eventType,
+    product_id: product?.id || null,
+    product_name: product?.name || (eventType === 'whatsapp_click' ? 'Pedido por WhatsApp' : 'Producto'),
+    quantity: Math.max(1, Math.min(1000, Math.trunc(Number(quantity) || 1)))
+  };
+  fetch(`${SUPABASE_URL}/rest/v1/store_analytics_events`, {
+    method: 'POST',
+    headers: {
+      apikey: SUPABASE_PUBLISHABLE_KEY,
+      Authorization: `Bearer ${SUPABASE_PUBLISHABLE_KEY}`,
+      'Content-Type': 'application/json',
+      Prefer: 'return=minimal'
+    },
+    body: JSON.stringify(payload),
+    keepalive: true
+  }).catch((error) => console.warn('No se pudo registrar la actividad de la tienda:', error));
+}
+
 function syncCartWithStock() {
   const available = new Map(products.map((product) => [product.id, product.stock]));
   Object.keys(cart).forEach((id) => {
@@ -188,10 +209,12 @@ function updateCart() {
 
 function addToCart(id) {
   const product = products.find((item) => item.id === id);
-  if (!product || product.stock <= 0) return;
-  cart[id] = Math.min(getCartQuantity(id) + 1, product.stock);
+  if (!product || product.stock <= 0 || getCartQuantity(id) >= product.stock) return false;
+  cart[id] = getCartQuantity(id) + 1;
   cartMessage.textContent = '';
   updateCart();
+  trackStoreEvent('add_to_cart', { product, quantity: 1 });
+  return true;
 }
 
 async function loadProducts({ loading = true } = {}) {
@@ -266,6 +289,7 @@ async function reserveCartStock(entries) {
 
 async function checkout() {
   if (!cartEntries().length) return;
+  trackStoreEvent('whatsapp_click', { quantity: cartEntries().reduce((sum, entry) => sum + entry.quantity, 0) });
   const phone = WHATSAPP_NUMBER.replace(/\D/g, '');
   if (!phone) {
     cartMessage.textContent = 'Aún falta configurar el WhatsApp del emprendimiento.';

@@ -445,3 +445,31 @@ imagePreview.addEventListener('click', (event) => {
 });
 
 showAdminForCurrentSession();
+
+// Estadísticas de actividad: el historial completo se pagina desde Supabase.
+const analyticsDialog = document.querySelector('#adminAnalytics');
+const analyticsStatus = document.querySelector('#analyticsStatus');
+const analyticsContent = document.querySelector('#analyticsContent');
+const limaHour = (iso) => Number(new Intl.DateTimeFormat('en-GB', { timeZone: 'America/Lima', hour: '2-digit', hourCycle: 'h23' }).format(new Date(iso)));
+function drawEventChart(node, events, type, color) {
+  const data = Array.from({ length: 24 }, (_, h) => events.filter((e) => e.event_type === type && limaHour(e.created_at) === h).length);
+  const max = Math.max(1, ...data);
+  node.innerHTML = `<div class="analytics-bars">${data.map((n,h)=>`<div class="analytics-bar" title="${String(h).padStart(2,'0')}:00 · ${n}"><span>${n || ''}</span><i style="height:${Math.max(n?3:0,Math.round(100*n/max))}%;background:${color}"></i><small>${String(h).padStart(2,'0')}</small></div>`).join('')}</div><p>Hora de Perú · ${data.reduce((a,b)=>a+b,0)} eventos</p>`;
+}
+function paintAnalytics(events) {
+  const adds=events.filter(e=>e.event_type==='add_to_cart'), wa=events.filter(e=>e.event_type==='whatsapp_click');
+  const byProduct=new Map();
+  adds.forEach(e=>{const k=e.product_id||e.product_name;const s=byProduct.get(k)||{name:e.product_name,id:e.product_id,units:0,actions:0};s.units+=Number(e.quantity||1);s.actions++;byProduct.set(k,s)});
+  const top=[...byProduct.values()].sort((a,b)=>b.units-a.units)[0];
+  document.querySelector('#analyticsCards').innerHTML=`<article><span>Unidades agregadas</span><strong>${adds.reduce((n,e)=>n+Number(e.quantity||1),0)}</strong></article><article><span>Clics en WhatsApp</span><strong>${wa.length}</strong></article><article><span>Eventos guardados</span><strong>${events.length}</strong></article>`;
+  const topNode=document.querySelector('#topProduct');
+  if(!top) topNode.innerHTML='<p>Aún no hay productos agregados al carrito.</p>';
+  else {const p=products.find(x=>x.id===top.id);const url=p?.image_path?publicStorageUrl(p.image_path):'';topNode.innerHTML=`<div class="analytics-product">${url?`<a href="${url}" target="_blank" rel="noopener"><img src="${url}" alt=""></a>`:'<span>Sin foto</span>'}<div><strong>${escapeHtml(top.name)}</strong><p>${top.units} unidades · ${top.actions} veces agregado</p>${url?`<a href="${url}" target="_blank" rel="noopener">Abrir imagen ↗</a>`:''}</div></div>`}
+  drawEventChart(document.querySelector('#cartHourChart'),events,'add_to_cart','#9a5872');drawEventChart(document.querySelector('#whatsappHourChart'),events,'whatsapp_click','#57a783');
+  document.querySelector('#analyticsHistory').innerHTML=events.map(e=>{const p=products.find(x=>x.id===e.product_id);const url=p?.image_path?publicStorageUrl(p.image_path):'';const when=new Intl.DateTimeFormat('es-PE',{timeZone:'America/Lima',dateStyle:'short',timeStyle:'short',hourCycle:'h23'}).format(new Date(e.created_at));return `<tr><td>${when}</td><td>${e.event_type==='add_to_cart'?'Agregó al carrito':'Clic para pedir por WhatsApp'}</td><td>${url?`<a class="analytics-history-product" href="${url}" target="_blank" rel="noopener"><img src="${url}" alt="">${escapeHtml(e.product_name)}</a>`:escapeHtml(e.product_name)}</td><td>${e.quantity}</td></tr>`}).join('')||'<tr><td colspan="4">No hay actividad registrada todavía.</td></tr>';
+  document.querySelector('#analyticsHistorySummary').textContent=`${events.length} eventos; historial completo, del más reciente al más antiguo.`;analyticsContent.hidden=false;
+}
+async function loadAnalyticsHistory(){analyticsStatus.textContent='Cargando historial completo…';analyticsContent.hidden=true;try{let all=[],offset=0,page;do{page=await request(`/rest/v1/store_analytics_events?select=id,event_type,product_id,product_name,quantity,created_at&order=created_at.desc&limit=1000&offset=${offset}`);all.push(...(page||[]));offset+=1000}while(page&&page.length===1000);paintAnalytics(all);analyticsStatus.textContent='Historial completo · horas de Perú'}catch(e){analyticsStatus.textContent=/store_analytics_events|404|relation/i.test(e.message)?'Primero ejecuta supabase/add-store-analytics.sql en Supabase → SQL Editor.':`No se pudo cargar: ${e.message}`}}
+document.querySelector('#openAnalytics').addEventListener('click',()=>{analyticsDialog.showModal();loadAnalyticsHistory()});
+document.querySelector('#closeAnalytics').addEventListener('click',()=>analyticsDialog.close());
+analyticsDialog.addEventListener('click',e=>{if(e.target===analyticsDialog)analyticsDialog.close()});

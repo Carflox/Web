@@ -54,13 +54,22 @@
         </section>
 
         <section class="panel products-list-panel" aria-labelledby="listTitle">
-          <div class="panel-heading"><div><h2 id="listTitle">Productos creados</h2><p id="productsSummary">Cargando…</p></div><button class="text-button" id="refreshProducts" type="button">Actualizar</button></div>
+          <div class="panel-heading"><div><h2 id="listTitle">Productos creados</h2><p id="productsSummary">Cargando…</p></div><div class="admin-list-actions"><button class="text-button" id="openAnalytics" type="button">Estadísticas</button><button class="text-button" id="refreshProducts" type="button">Actualizar</button></div></div>
           <label class="admin-search"><span class="sr-only">Buscar productos del catálogo</span><input id="adminProductSearch" type="search" placeholder="Buscar por nombre, descripción o categoría…" autocomplete="off"></label>
           <p class="admin-order-status" id="adminOrderStatus" role="status">Arrastra los productos para cambiar su orden.</p>
           <div class="admin-products" id="adminProducts"></div>
         </section>
       </div>
     </section>
+    <dialog class="admin-analytics" id="adminAnalytics" aria-labelledby="analyticsTitle">
+      <div class="analytics-head"><div><p class="eyebrow">Actividad de la tienda</p><h2 id="analyticsTitle">Estadísticas</h2><p id="analyticsStatus" role="status">Cargando actividad…</p></div><button class="admin-image-preview-close" id="closeAnalytics" type="button" aria-label="Cerrar estadísticas">×</button></div>
+      <div class="analytics-content" id="analyticsContent" hidden>
+        <div class="analytics-cards" id="analyticsCards"></div>
+        <section class="analytics-top-product"><h3>Producto más agregado</h3><div id="topProduct"></div></section>
+        <div class="analytics-charts"><section><h3>Agregar al carrito por hora</h3><div id="cartHourChart" class="analytics-chart"></div></section><section><h3>Clics en pedir por WhatsApp por hora</h3><div id="whatsappHourChart" class="analytics-chart"></div></section></div>
+        <section class="analytics-history"><h3>Registro de actividad</h3><p id="analyticsHistorySummary"></p><div class="analytics-table-wrap"><table><thead><tr><th>Fecha y hora (Lima)</th><th>Evento</th><th>Producto</th><th>Cantidad</th></tr></thead><tbody id="analyticsHistory"></tbody></table></div></section>
+      </div>
+    </dialog>
     <dialog class="admin-image-preview" id="adminImagePreview" aria-label="Foto ampliada del producto">
       <button type="button" class="admin-image-preview-close" id="closeAdminImagePreview" aria-label="Cerrar foto ampliada">×</button>
       <img id="adminPreviewImage" alt="">
@@ -68,6 +77,6 @@
     </dialog>
   </main>
   <script src="js/supabase-config.js"></script>
-  <script src="js/admin.js?v=admin-product-image-zoom-20261022-2"></script>
+  <script src="js/admin.js?v=analytics-20261113-1"></script>
 </body>
 </html>
