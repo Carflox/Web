@@ -563,7 +563,7 @@ function paintAnalytics(events) {
   document.querySelector('#analyticsHistory').innerHTML=events.map(e=>{const p=products.find(x=>x.id===e.product_id);const url=p?.image_path?publicStorageUrl(p.image_path):'';const when=new Intl.DateTimeFormat('es-PE',{timeZone:'America/Lima',dateStyle:'short',timeStyle:'short',hourCycle:'h23'}).format(new Date(e.created_at));return `<tr><td>${when}</td><td>${e.event_type==='add_to_cart'?'Agregó al carrito':'Clic para pedir por WhatsApp'}</td><td>${url?`<a class="analytics-history-product" href="${url}" target="_blank" rel="noopener"><img src="${url}" alt="">${escapeHtml(e.product_name)}</a>`:escapeHtml(e.product_name)}</td><td>${e.quantity}</td></tr>`}).join('')||'<tr><td colspan="4">No hay actividad registrada todavía.</td></tr>';
   document.querySelector('#analyticsHistorySummary').textContent=`${events.length} eventos; historial completo, del más reciente al más antiguo.`;analyticsContent.hidden=false;
 }
-async function loadAnalyticsHistory(){analyticsStatus.textContent='Cargando historial completo…';analyticsContent.hidden=true;try{let all=[],offset=0,page;do{page=await request(`/rest/v1/store_analytics_events?select=id,event_type,product_id,product_name,quantity,created_at&order=created_at.desc&limit=1000&offset=${offset}`);all.push(...(page||[]));offset+=1000}while(page&&page.length===1000);paintAnalytics(all);analyticsStatus.textContent='Historial completo · horas de Perú'}catch(e){analyticsStatus.textContent=/store_analytics_events|404|relation/i.test(e.message)?'Primero ejecuta supabase/add-store-analytics.sql en Supabase → SQL Editor.':`No se pudo cargar: ${e.message}`}}
+async function loadAnalyticsHistory(){analyticsStatus.textContent='Cargando historial completo…';analyticsContent.hidden=true;try{let all=[],offset=0,page;do{page=await request(`/rest/v1/store_analytics_events?select=id,event_type,product_id,product_name,quantity,created_at&order=created_at.desc&limit=1000&offset=${offset}`);all.push(...(page||[]));offset+=1000}while(page&&page.length===1000);let dismissed=[];try{let dismissOffset=0,dismissPage;do{dismissPage=await request(`/rest/v1/store_whatsapp_order_resolutions?select=analytics_event_id&limit=1000&offset=${dismissOffset}`);dismissed.push(...(dismissPage||[]));dismissOffset+=1000}while(dismissPage&&dismissPage.length===1000)}catch{}const dismissedIds=new Set(dismissed.map(row=>String(row.analytics_event_id)));all=all.filter(item=>!dismissedIds.has(String(item.id)));paintAnalytics(all);analyticsStatus.textContent='Actividad disponible · los pedidos descartados se excluyen de los gráficos'}catch(e){analyticsStatus.textContent=/store_analytics_events|404|relation/i.test(e.message)?'Primero ejecuta supabase/add-store-analytics.sql en Supabase → SQL Editor.':`No se pudo cargar: ${e.message}`}}
 document.querySelector('#openAnalytics').addEventListener('click',()=>{analyticsDialog.showModal();loadAnalyticsHistory()});
 document.querySelector('#closeAnalytics').addEventListener('click',()=>analyticsDialog.close());
 analyticsDialog.addEventListener('click',e=>{if(e.target===analyticsDialog)analyticsDialog.close()});
@@ -626,14 +626,19 @@ function paintFinance(entries) {
     day.setDate(today.getDate() - 13 + index);
     const key = financeLimaDayKey(day);
     const amount = salesEntries.filter(entry => financeLimaDayKey(entry.created_at) === key).reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
-    return { label: new Intl.DateTimeFormat('es-PE', { timeZone: 'America/Lima', dateStyle: 'medium' }).format(day), shortLabel: key.slice(5), value: amount };
+    return { label: new Intl.DateTimeFormat('es-PE', { timeZone: 'America/Lima', dateStyle: 'medium' }).format(day), shortLabel: key.slice(5), dateKey: key, value: amount };
   });
   renderInteractiveChart(document.querySelector('#financeTrendChart'), trend, 'line', 'vertical');
-  renderInteractiveChart(document.querySelector('#financeShareChart'), [
-    { label: 'Ventas confirmadas', value: sales, color: '#54a17c' },
-    { label: 'Costo de productos vendidos', value: cogs, color: '#d89a55' },
-    { label: 'Gastos operativos', value: operatingExpenses, color: '#d76b83' }
-  ], 'pie', 'vertical');
+  const costByDay = new Map();
+  for (const entry of entries) {
+    const key = financeLimaDayKey(entry.created_at);
+    const amount = entry.entry_type === 'sale'
+      ? Number(entry.cost_amount || 0)
+      : entry.category === 'productos' ? 0 : Number(entry.amount || 0);
+    costByDay.set(key, (costByDay.get(key) || 0) + amount);
+  }
+  const costTrend = trend.map(point => ({ ...point, value: costByDay.get(point.dateKey) || 0 }));
+  renderInteractiveChart(document.querySelector('#financeCostsTrendChart'), costTrend, 'bar', 'vertical');
 
   const categories = new Map();
   expenseEntries.forEach(entry => categories.set(entry.category, (categories.get(entry.category) || 0) + Number(entry.amount || 0)));
@@ -684,13 +689,19 @@ async function loadPendingWhatsappOrders() {
       linkPage = await request(`/rest/v1/store_finance_entries?select=analytics_event_id&analytics_event_id=not.is.null&limit=1000&offset=${linkOffset}`);
       links.push(...(linkPage || [])); linkOffset += 1000;
     } while (linkPage && linkPage.length === 1000);
+    let resolutions = [], resolutionOffset = 0, resolutionPage;
+    do {
+      resolutionPage = await request(`/rest/v1/store_whatsapp_order_resolutions?select=analytics_event_id&limit=1000&offset=${resolutionOffset}`);
+      resolutions.push(...(resolutionPage || [])); resolutionOffset += 1000;
+    } while (resolutionPage && resolutionPage.length === 1000);
     const recorded = new Set(links.map(row => String(row.analytics_event_id)));
-    const pending = events.filter(event => !recorded.has(String(event.id)));
-    financePendingWhatsapp.innerHTML = pending.map(event => `<tr><td>${financeDate(event.created_at)}</td><td>${escapeHtml(event.product_name || 'Producto')}</td><td>${Math.max(1, Number(event.quantity || 1))} u.</td><td><button class="finance-review" type="button" data-whatsapp-review="${escapeHtml(event.id)}" data-product-id="${escapeHtml(event.product_id || '')}">Revisar pedido</button></td></tr>`).join('') || '<tr><td colspan="4">No hay pedidos pendientes de revisar.</td></tr>';
-    financePendingStatus.textContent = `${pending.length} clics de WhatsApp pendientes · cada clic se revisa antes de contarlo como venta.`;
+    const resolved = new Set(resolutions.map(row => String(row.analytics_event_id)));
+    const pending = events.filter(event => !recorded.has(String(event.id)) && !resolved.has(String(event.id)));
+    financePendingWhatsapp.innerHTML = pending.map(event => `<tr><td>${financeDate(event.created_at)}</td><td>${escapeHtml(event.product_name || 'Producto')}</td><td>${Math.max(1, Number(event.quantity || 1))} u.</td><td class="finance-pending-actions"><button class="finance-review" type="button" data-whatsapp-review="${escapeHtml(event.id)}" data-product-id="${escapeHtml(event.product_id || '')}">Confirmar venta</button><button class="finance-delete" type="button" data-whatsapp-dismiss="${escapeHtml(event.id)}">No se concretó</button></td></tr>`).join('') || '<tr><td colspan="4">No hay pedidos pendientes de revisar.</td></tr>';
+    financePendingStatus.textContent = `${pending.length} pedidos pendientes · confirma los concretados y descarta los demás.`;
   } catch (error) {
     financePendingWhatsapp.innerHTML = '<tr><td colspan="4">Falta activar la vinculación de pedidos por WhatsApp en Supabase.</td></tr>';
-    financePendingStatus.textContent = 'Ejecuta supabase/link-whatsapp-orders-to-finance.sql en Supabase → SQL Editor para habilitar confirmación y evitar ventas duplicadas.';
+    financePendingStatus.textContent = 'La lista de pedidos necesita habilitar una vez la vinculación segura de WhatsApp con Finanzas.';
   }
 }
 async function submitFinance(form, entryType) {
@@ -755,6 +766,14 @@ financeSaleProduct.addEventListener('change', () => syncFinanceSaleFields({ useC
 document.querySelector('#financeSaleForm').elements.quantity.addEventListener('input', () => syncFinanceSaleFields());
 document.querySelector('#financeSaleForm').elements.unit_price.addEventListener('input', () => syncFinanceSaleFields());
 financePendingWhatsapp.addEventListener('click', event => {
+  const dismissButton = event.target.closest('[data-whatsapp-dismiss]');
+  if (dismissButton) {
+    dismissButton.disabled = true;
+    request('/rest/v1/store_whatsapp_order_resolutions', { method: 'POST', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' }, body: JSON.stringify({ analytics_event_id: Number(dismissButton.dataset.whatsappDismiss), resolution: 'not_sold' }) })
+      .then(loadFinanceEntries)
+      .catch(error => { financeStatus.textContent = `No se pudo descartar el pedido: ${error.message}`; dismissButton.disabled = false; });
+    return;
+  }
   const button = event.target.closest('[data-whatsapp-review]');
   if (!button) return;
   const row = button.closest('tr');
@@ -782,7 +801,6 @@ financePendingWhatsapp.addEventListener('click', event => {
   form.scrollIntoView({ behavior: 'smooth', block: 'center' });
   financeStatus.textContent = 'Pedido cargado para revisión. Confirma el pago y verifica precio y costo antes de guardarlo como venta.';
 });
-financeSaleProduct.addEventListener('change', () => { document.querySelector('#financeSaleForm').elements.analytics_event_id.value = ''; syncFinanceSaleFields({ useCurrentPrices: true }); });
 document.querySelector('#financeSaleForm').addEventListener('submit', event => { event.preventDefault(); submitFinance(event.currentTarget, 'sale'); });
 document.querySelector('#financeExpenseForm').addEventListener('submit', event => { event.preventDefault(); submitFinance(event.currentTarget, 'expense'); });
 document.querySelectorAll('#financeSaleForm, #financeExpenseForm').forEach(form => form.addEventListener('reset', () => setTimeout(setFinanceDateDefaults)));
@@ -810,7 +828,9 @@ function renderInteractiveChart(node, points, initialMode='bar', initialOrientat
   }else if(valid.length&&mode==='line'){
     const max=Math.max(1,...valid.map(point=>Number(point.value))),width=Math.max(520,valid.length*48),height=190,pad=24;
     const coords=valid.map((point,index)=>({x:valid.length===1?width/2:pad+index*(width-pad*2)/(valid.length-1),y:height-pad-Number(point.value)/max*(height-pad*2),...point}));
-    visual=`<div class="line-chart-wrap"><svg class="line-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="Gráfico lineal"><polyline points="${coords.map(point=>`${point.x},${point.y}`).join(' ')}" fill="none" stroke="#96556e" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>${coords.map((point,index)=>`<circle cx="${point.x}" cy="${point.y}" r="4" fill="#96556e"><title>${escapeHtml(point.label)}: ${Number(point.value).toLocaleString('es-PE')}</title></circle>${index%Math.max(1,Math.ceil(coords.length/10))===0?`<text x="${point.x}" y="${height-3}" text-anchor="middle">${escapeHtml(point.shortLabel||point.label)}</text>`:''}`).join('')}</svg></div>`;
+    const gradientId=`${node.id}-line-gradient`;
+    const stops=colors.map((color,index)=>`<stop offset="${colors.length===1?0:index/(colors.length-1)*100}%" stop-color="${color}"/>`).join('');
+    visual=`<div class="line-chart-wrap"><svg class="line-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="Gráfico lineal"><defs><linearGradient id="${gradientId}" x1="0" x2="1">${stops}</linearGradient></defs><polyline points="${coords.map(point=>`${point.x},${point.y}`).join(' ')}" fill="none" stroke="url(#${gradientId})" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>${coords.map((point,index)=>`<circle cx="${point.x}" cy="${point.y}" r="4" fill="${colors[index]}"><title>${escapeHtml(point.label)}: ${Number(point.value).toLocaleString('es-PE')}</title></circle>${index%Math.max(1,Math.ceil(coords.length/10))===0?`<text x="${point.x}" y="${height-3}" text-anchor="middle">${escapeHtml(point.shortLabel||point.label)}</text>`:''}`).join('')}</svg></div>`;
   }else if(valid.length){
     const max=Math.max(1,...valid.map(point=>Number(point.value)));
     visual=`<div class="bar-chart ${orientation==='horizontal'?'horizontal':'vertical'}">${valid.map((point,index)=>`<div class="bar-item" title="${escapeHtml(point.label)} · ${Number(point.value).toLocaleString('es-PE')}"><span>${escapeHtml(point.shortLabel||point.label)}</span><i style="--bar-size:${Math.max(2,Number(point.value)/max*100)}%;--bar-color:${colors[index]}"></i><strong>${Number(point.value).toLocaleString('es-PE',{maximumFractionDigits:2})}</strong></div>`).join('')}</div>`;
@@ -829,9 +849,19 @@ async function loadFinanceProductPerformance() {
   try {
     let events = [], offset = 0, page;
     do {
-      page = await request(`/rest/v1/store_analytics_events?select=event_type,product_id,quantity&order=created_at.desc&limit=1000&offset=${offset}`);
+      page = await request(`/rest/v1/store_analytics_events?select=id,event_type,product_id,quantity&order=created_at.desc&limit=1000&offset=${offset}`);
       events.push(...(page || [])); offset += 1000;
     } while (page && page.length === 1000);
+    let dismissed = [];
+    try {
+      let dismissOffset = 0, dismissPage;
+      do {
+        dismissPage = await request(`/rest/v1/store_whatsapp_order_resolutions?select=analytics_event_id&limit=1000&offset=${dismissOffset}`);
+        dismissed.push(...(dismissPage || [])); dismissOffset += 1000;
+      } while (dismissPage && dismissPage.length === 1000);
+    } catch { /* Conserva la lectura de actividad previa a esta vinculación. */ }
+    const dismissedIds = new Set(dismissed.map(row => String(row.analytics_event_id)));
+    events = events.filter(event => !dismissedIds.has(String(event.id)));
     const activity = new Map();
     for (const event of events) {
       if (!event.product_id) continue;
