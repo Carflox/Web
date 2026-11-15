@@ -525,10 +525,23 @@ if __name__ == "__main__":
     missing_pages = [str(page) for page in required_pages if not page.is_file()]
     if missing_pages:
         raise SystemExit("Faltan páginas necesarias: " + ", ".join(missing_pages))
-    port = int(os.environ.get("PORT", "3000"))
     is_render = running_on_render()
     host = "0.0.0.0" if is_render else "127.0.0.1"
-    server = ThreadingHTTPServer((host, port), SiteHandler)
+    configured_port = os.environ.get("PORT", "").strip()
+    first_port = int(configured_port) if configured_port else 3001
+    ports = [first_port] if configured_port or is_render else range(first_port, first_port + 20)
+    server = None
+    port = first_port
+    for candidate in ports:
+        try:
+            server = ThreadingHTTPServer((host, candidate), SiteHandler)
+            port = candidate
+            break
+        except OSError:
+            if configured_port or is_render:
+                raise
+    if server is None:
+        raise SystemExit(f"No hay puertos locales disponibles entre {first_port} y {first_port + 19}.")
     print(f"YC NICE LADY escuchando en el puerto {port}; páginas: {ROOT / 'index.html'} y {ROOT / 'admin.html'}; SQLite: {DB_PATH}", flush=True)
     if not is_render:
         def open_local_pages():

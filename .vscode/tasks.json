@@ -2,10 +2,10 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "Abrir panel admin local",
+      "label": "Iniciar sitio y panel (Python)",
       "type": "process",
-      "command": "py",
-      "args": ["-m", "http.server", "3000", "--bind", "127.0.0.1"],
+      "command": "${command:python.interpreterPath}",
+      "args": ["app.py"],
       "options": {
         "cwd": "${workspaceFolder}"
       },
@@ -15,8 +15,8 @@
         "pattern": [{ "regexp": ".*" }],
         "background": {
           "activeOnStart": true,
-          "beginsPattern": "Serving HTTP on",
-          "endsPattern": "Serving HTTP on"
+          "beginsPattern": "YC NICE LADY escuchando en el puerto",
+          "endsPattern": "YC NICE LADY escuchando en el puerto"
         }
       },
       "presentation": {
@@ -24,14 +24,6 @@
         "panel": "dedicated",
         "clear": false
       }
-    },
-    {
-      "label": "Abrir admin en el navegador",
-      "type": "shell",
-      "command": "Start-Process 'http://localhost:3000/admin.html'",
-      "dependsOn": "Abrir panel admin local",
-      "dependsOrder": "sequence",
-      "problemMatcher": []
     }
   ]
 }

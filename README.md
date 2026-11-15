@@ -83,7 +83,7 @@ El servicio `app.py` ejecuta el catálogo, el acceso privado, las estadísticas,
 
 Los enlaces compartibles de productos usan `/f/<id>` y generan la vista previa social desde Python/SQLite. Las imágenes de esa vista previa se sirven desde el bucket público de Supabase Storage; no se consulta la tabla de productos de Supabase.
 
-Para iniciar localmente, completa `.env` con `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `SESSION_SECRET`, `SUPABASE_SERVICE_ROLE_KEY` y la URL y bucket de Supabase. `.env.example` muestra los nombres. Ejecuta `python app.py`; el servidor abre el panel en `http://localhost:3000/admin`. Mantén esa terminal abierta mientras uses el panel.
+Para iniciar localmente, completa `.env` con `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `SESSION_SECRET`, `SUPABASE_SERVICE_ROLE_KEY` y la URL y bucket de Supabase. `.env.example` muestra los nombres. Ejecuta `python app.py` o la tarea **Iniciar sitio y panel (Python)** de VS Code. El servidor abre la tienda y el panel en el navegador desde el puerto 3001; si está ocupado, usará el siguiente puerto libre y lo indicará en la terminal. Mantén esa terminal abierta mientras uses el panel.
 
 En Render, configura `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `SESSION_SECRET`, `SUPABASE_URL`, `SUPABASE_PRODUCTS_BUCKET` y `SUPABASE_SERVICE_ROLE_KEY` en **Environment**. Para conservar la base SQLite entre reinicios y despliegues, conecta un disco persistente y configura `STORE_DB_PATH=/var/data/store.sqlite3` con el punto de montaje `/var/data`. Sin un disco persistente, Render puede borrar los registros locales al reiniciar o volver a desplegar.
 
