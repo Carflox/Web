@@ -563,7 +563,7 @@ function paintAnalytics(events) {
   document.querySelector('#analyticsHistory').innerHTML=events.map(e=>{const p=products.find(x=>x.id===e.product_id);const url=p?.image_path?publicStorageUrl(p.image_path):'';const when=new Intl.DateTimeFormat('es-PE',{timeZone:'America/Lima',dateStyle:'short',timeStyle:'short',hourCycle:'h23'}).format(new Date(e.created_at));return `<tr><td>${when}</td><td>${e.event_type==='add_to_cart'?'Agregó al carrito':'Clic para pedir por WhatsApp'}</td><td>${url?`<a class="analytics-history-product" href="${url}" target="_blank" rel="noopener"><img src="${url}" alt="">${escapeHtml(e.product_name)}</a>`:escapeHtml(e.product_name)}</td><td>${e.quantity}</td></tr>`}).join('')||'<tr><td colspan="4">No hay actividad registrada todavía.</td></tr>';
   document.querySelector('#analyticsHistorySummary').textContent=`${events.length} eventos; historial completo, del más reciente al más antiguo.`;analyticsContent.hidden=false;
 }
-async function loadAnalyticsHistory(){analyticsStatus.textContent='Cargando historial completo…';analyticsContent.hidden=true;try{let all=[],offset=0,page;do{page=await request(`/rest/v1/store_analytics_events?select=id,event_type,product_id,product_name,quantity,created_at&order=created_at.desc&limit=1000&offset=${offset}`);all.push(...(page||[]));offset+=1000}while(page&&page.length===1000);let dismissed=[];try{let dismissOffset=0,dismissPage;do{dismissPage=await request(`/rest/v1/store_whatsapp_order_resolutions?select=analytics_event_id&limit=1000&offset=${dismissOffset}`);dismissed.push(...(dismissPage||[]));dismissOffset+=1000}while(dismissPage&&dismissPage.length===1000)}catch{}const dismissedIds=new Set(dismissed.map(row=>String(row.analytics_event_id)));all=all.filter(item=>!dismissedIds.has(String(item.id)));paintAnalytics(all);analyticsStatus.textContent='Actividad disponible · los pedidos descartados se excluyen de los gráficos'}catch(e){analyticsStatus.textContent=/store_analytics_events|404|relation/i.test(e.message)?'Primero ejecuta supabase/add-store-analytics.sql en Supabase → SQL Editor.':`No se pudo cargar: ${e.message}`}}
+async function loadAnalyticsHistory(){analyticsStatus.textContent='Cargando historial de actividad…';analyticsContent.hidden=true;try{let all=[],offset=0,page;do{page=await request(`/rest/v1/store_analytics_events?select=id,event_type,product_id,product_name,quantity,created_at&order=created_at.desc&limit=1000&offset=${offset}`);all.push(...(page||[]));offset+=1000}while(page&&page.length===1000);const dismissedIds=readDismissedWhatsappIds();all=all.filter(item=>!dismissedIds.has(String(item.id)));paintAnalytics(all);analyticsStatus.textContent='Actividad del catálogo · los pedidos descartados se excluyen de los gráficos'}catch(e){analyticsStatus.textContent=/store_analytics_events|404|relation/i.test(e.message)?'La actividad del catálogo todavía no está disponible.':`No se pudo cargar: ${e.message}`}}
 document.querySelector('#openAnalytics').addEventListener('click',()=>{analyticsDialog.showModal();loadAnalyticsHistory()});
 document.querySelector('#closeAnalytics').addEventListener('click',()=>analyticsDialog.close());
 analyticsDialog.addEventListener('click',e=>{if(e.target===analyticsDialog)analyticsDialog.close()});
@@ -579,7 +579,26 @@ const financePendingWhatsapp = document.querySelector('#financePendingWhatsapp')
 const financePendingStatus = document.querySelector('#financePendingStatus');
 const financeCategoryLabels = { sale: 'Venta', delivery: 'Delivery pagado', gasolina: 'Gasolina', material_moto: 'Materiales de moto', productos: 'Compra de inventario', empaque: 'Empaques', otros: 'Otros gastos' };
 const financeSaleProduct = document.querySelector('#financeSaleProduct');
+const FINANCE_STORAGE_KEY = 'ycNiceLady.financeEntries.v1';
+const DISMISSED_WHATSAPP_STORAGE_KEY = 'ycNiceLady.dismissedWhatsAppEvents.v1';
 let latestFinanceEntries = [];
+function readFinanceEntries() {
+  try { const rows = JSON.parse(localStorage.getItem(FINANCE_STORAGE_KEY) || '[]'); return Array.isArray(rows) ? rows : []; }
+  catch { return []; }
+}
+function writeFinanceEntries(rows) {
+  try { localStorage.setItem(FINANCE_STORAGE_KEY, JSON.stringify(rows)); return true; }
+  catch { financeStatus.textContent = 'No se pudo guardar en este navegador. Libera espacio del navegador e inténtalo de nuevo.'; return false; }
+}
+function readDismissedWhatsappIds() {
+  try { const ids = JSON.parse(localStorage.getItem(DISMISSED_WHATSAPP_STORAGE_KEY) || '[]'); return new Set(Array.isArray(ids) ? ids.map(String) : []); }
+  catch { return new Set(); }
+}
+function dismissWhatsappLocally(id) {
+  const ids = readDismissedWhatsappIds(); ids.add(String(id));
+  try { localStorage.setItem(DISMISSED_WHATSAPP_STORAGE_KEY, JSON.stringify([...ids])); return true; }
+  catch { financeStatus.textContent = 'No se pudo guardar el descarte en este navegador.'; return false; }
+}
 function financeMoney(value) { return `S/ ${Number(value || 0).toFixed(2)}`; }
 function financeDate(value) { return new Intl.DateTimeFormat('es-PE', { timeZone: 'America/Lima', dateStyle: 'short', timeStyle: 'short', hourCycle: 'h23' }).format(new Date(value)); }
 function financeLimaDayKey(value) {
@@ -646,20 +665,11 @@ function paintFinance(entries) {
   }).join('') || '<tr><td colspan="6">Aún no hay costos ni gastos registrados.</td></tr>';
 }
 async function loadFinanceEntries() {
-  financeStatus.textContent = 'Cargando movimientos…';
-  try {
-    let all = [], offset = 0, page;
-    do {
-      page = await request(`/rest/v1/store_finance_entries?select=id,entry_type,description,category,amount,product_id,quantity,cost_amount,supplier,created_at&order=created_at.desc&limit=1000&offset=${offset}`);
-      all.push(...(page || [])); offset += 1000;
-    } while (page && page.length === 1000);
-    latestFinanceEntries = all;
-    paintFinance(all);
-    financeStatus.textContent = `${all.length} movimientos registrados · montos en soles`;
-    await Promise.all([loadFinanceProductPerformance(), loadPendingWhatsappOrders()]);
-  } catch (error) {
-    financeStatus.textContent = /supplier|schema cache/i.test(error.message) ? 'Falta habilitar el campo de proveedor. Ejecuta una vez supabase/link-whatsapp-orders-to-finance.sql en Supabase → SQL Editor.' : /store_finance_entries|404|relation/i.test(error.message) ? 'Primero ejecuta supabase/add-store-finances.sql en Supabase → SQL Editor.' : `No se pudieron cargar las finanzas: ${error.message}`;
-  }
+  const all = readFinanceEntries().sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+  latestFinanceEntries = all;
+  paintFinance(all);
+  financeStatus.textContent = `${all.length} movimientos guardados solo en este navegador · no se envían a Supabase`;
+  await Promise.all([loadFinanceProductPerformance(), loadPendingWhatsappOrders()]);
 }
 async function loadPendingWhatsappOrders() {
   if (!financePendingWhatsapp || !financePendingStatus) return;
@@ -669,24 +679,14 @@ async function loadPendingWhatsappOrders() {
       page = await request(`/rest/v1/store_analytics_events?select=id,event_type,product_id,product_name,quantity,created_at&event_type=eq.whatsapp_click&order=created_at.desc&limit=1000&offset=${offset}`);
       events.push(...(page || [])); offset += 1000;
     } while (page && page.length === 1000);
-    let links = [], linkOffset = 0, linkPage;
-    do {
-      linkPage = await request(`/rest/v1/store_finance_entries?select=analytics_event_id&analytics_event_id=not.is.null&limit=1000&offset=${linkOffset}`);
-      links.push(...(linkPage || [])); linkOffset += 1000;
-    } while (linkPage && linkPage.length === 1000);
-    let resolutions = [], resolutionOffset = 0, resolutionPage;
-    do {
-      resolutionPage = await request(`/rest/v1/store_whatsapp_order_resolutions?select=analytics_event_id&limit=1000&offset=${resolutionOffset}`);
-      resolutions.push(...(resolutionPage || [])); resolutionOffset += 1000;
-    } while (resolutionPage && resolutionPage.length === 1000);
-    const recorded = new Set(links.map(row => String(row.analytics_event_id)));
-    const resolved = new Set(resolutions.map(row => String(row.analytics_event_id)));
+    const recorded = new Set(latestFinanceEntries.map(row => String(row.analytics_event_id || '')).filter(Boolean));
+    const resolved = readDismissedWhatsappIds();
     const pending = events.filter(event => !recorded.has(String(event.id)) && !resolved.has(String(event.id)));
     financePendingWhatsapp.innerHTML = pending.map(event => `<tr><td>${financeDate(event.created_at)}</td><td>${escapeHtml(event.product_name || 'Producto')}</td><td>${Math.max(1, Number(event.quantity || 1))} u.</td><td class="finance-pending-actions"><button class="finance-review" type="button" data-whatsapp-review="${escapeHtml(event.id)}" data-product-id="${escapeHtml(event.product_id || '')}">Confirmar venta</button><button class="finance-delete" type="button" data-whatsapp-dismiss="${escapeHtml(event.id)}">No se concretó</button></td></tr>`).join('') || '<tr><td colspan="4">No hay pedidos pendientes de revisar.</td></tr>';
     financePendingStatus.textContent = `${pending.length} pedidos pendientes · confirma los concretados y descarta los demás.`;
   } catch (error) {
-    financePendingWhatsapp.innerHTML = '<tr><td colspan="4">Falta activar la vinculación de pedidos por WhatsApp en Supabase.</td></tr>';
-    financePendingStatus.textContent = 'La lista de pedidos necesita habilitar una vez la vinculación segura de WhatsApp con Finanzas.';
+    financePendingWhatsapp.innerHTML = '<tr><td colspan="4">No se pudo leer la actividad de WhatsApp del catálogo.</td></tr>';
+    financePendingStatus.textContent = 'Las ventas y gastos se guardan localmente; la lista de clics depende de las estadísticas públicas.';
   }
 }
 async function submitFinance(form, entryType) {
@@ -710,34 +710,32 @@ async function submitFinance(form, entryType) {
     }
     payload = { entry_type: 'sale', category: 'sale', description, amount, product_id: product?.id || null, quantity, cost_amount: 0, created_at: createdAt.toISOString() };
     const analyticsEventId = String(data.get('analytics_event_id') || '');
-    if (analyticsEventId) payload.analytics_event_id = Number(analyticsEventId);
+    if (analyticsEventId) payload.analytics_event_id = analyticsEventId;
   } else {
     payload = { entry_type: 'expense', category: String(data.get('category')), description, supplier: String(data.get('supplier') || '').trim() || null, amount, created_at: createdAt.toISOString() };
   }
   const button = form.querySelector('button[type="submit"]');
   button.disabled = true;
-  try {
-    await request('/rest/v1/store_finance_entries', { method: 'POST', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' }, body: JSON.stringify(payload) });
-    form.reset();
-    if (entryType === 'sale') {
-      form.elements.quantity.value = '1';
-      form.elements.unit_price.value = '';
-      financeSaleProduct.value = '';
-    }
-    setFinanceDateDefaults();
-    await loadFinanceEntries();
-    financeStatus.textContent = entryType === 'sale' ? 'Venta confirmada registrada con su costo histórico.' : payload.category === 'productos' ? 'Compra de inventario registrada; no se duplicará como gasto de la ganancia.' : 'Gasto operativo registrado.';
-  } catch (error) {
-    financeStatus.textContent = /store_finance_entries|404|relation/i.test(error.message)
-      ? 'Falta crear store_finance_entries en Supabase. Ejecuta primero supabase/add-store-finances.sql.'
-      : /supplier|schema cache/i.test(error.message)
-        ? 'Ejecuta una vez supabase/link-whatsapp-orders-to-finance.sql para guardar el proveedor y vincular pedidos.'
-      : /created_at|cost_amount|product_id|quantity|schema cache|column/i.test(error.message)
-        ? 'Faltan columnas de Finanzas en Supabase. Ejecuta supabase/add-product-cost-and-finance.sql y verifica created_at.'
-        : `No se pudo guardar: ${error.message}`;
-  } finally {
+  const localEntries = readFinanceEntries();
+  if (payload.analytics_event_id && localEntries.some(row => String(row.analytics_event_id || '') === payload.analytics_event_id)) {
+    financeStatus.textContent = 'Este pedido ya se confirmó como venta en este navegador.';
     button.disabled = false;
+    return;
   }
+  payload.id = globalThis.crypto?.randomUUID?.() || `local-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  if (!writeFinanceEntries([...localEntries, payload])) { button.disabled = false; return; }
+  form.reset();
+  if (entryType === 'sale') {
+    form.elements.quantity.value = '1';
+    form.elements.unit_price.value = '';
+    financeSaleProduct.value = '';
+  }
+  setFinanceDateDefaults();
+  await loadFinanceEntries();
+  financeStatus.textContent = entryType === 'sale'
+    ? 'Venta confirmada guardada solo en este navegador.'
+    : payload.category === 'productos' ? 'Compra del proveedor guardada solo en este navegador.' : 'Gasto guardado solo en este navegador.';
+  button.disabled = false;
 }
 document.querySelector('#openFinance').addEventListener('click', () => {
   financeDialog.showModal();
@@ -754,9 +752,8 @@ financePendingWhatsapp.addEventListener('click', event => {
   const dismissButton = event.target.closest('[data-whatsapp-dismiss]');
   if (dismissButton) {
     dismissButton.disabled = true;
-    request('/rest/v1/store_whatsapp_order_resolutions', { method: 'POST', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' }, body: JSON.stringify({ analytics_event_id: Number(dismissButton.dataset.whatsappDismiss), resolution: 'not_sold' }) })
-      .then(loadFinanceEntries)
-      .catch(error => { financeStatus.textContent = `No se pudo descartar el pedido: ${error.message}`; dismissButton.disabled = false; });
+    if (dismissWhatsappLocally(dismissButton.dataset.whatsappDismiss)) await loadFinanceEntries();
+    else dismissButton.disabled = false;
     return;
   }
   const button = event.target.closest('[data-whatsapp-review]');
@@ -795,8 +792,11 @@ financeDialog.addEventListener('click', async event => {
   const button = event.target.closest('[data-finance-delete]');
   if (!button || !window.confirm('¿Eliminar este movimiento financiero?')) return;
   button.disabled = true;
-  try { await request(`/rest/v1/store_finance_entries?id=eq.${encodeURIComponent(button.dataset.financeDelete)}`, { method: 'DELETE', headers: { Prefer: 'return=minimal' } }); await loadFinanceEntries(); }
-  catch (error) { financeStatus.textContent = `No se pudo eliminar: ${error.message}`; button.disabled = false; }
+  const rows = readFinanceEntries();
+  const removed = rows.find(row => String(row.id) === String(button.dataset.financeDelete));
+  if (removed?.analytics_event_id) dismissWhatsappLocally(removed.analytics_event_id);
+  if (writeFinanceEntries(rows.filter(row => String(row.id) !== String(button.dataset.financeDelete)))) await loadFinanceEntries();
+  else button.disabled = false;
 });
 
 // Controles compartidos para alternar gráficas de línea, barras y circular.
@@ -839,15 +839,7 @@ async function loadFinanceProductPerformance() {
       page = await request(`/rest/v1/store_analytics_events?select=id,event_type,product_id,quantity&order=created_at.desc&limit=1000&offset=${offset}`);
       events.push(...(page || [])); offset += 1000;
     } while (page && page.length === 1000);
-    let dismissed = [];
-    try {
-      let dismissOffset = 0, dismissPage;
-      do {
-        dismissPage = await request(`/rest/v1/store_whatsapp_order_resolutions?select=analytics_event_id&limit=1000&offset=${dismissOffset}`);
-        dismissed.push(...(dismissPage || [])); dismissOffset += 1000;
-      } while (dismissPage && dismissPage.length === 1000);
-    } catch { /* Conserva la lectura de actividad previa a esta vinculación. */ }
-    const dismissedIds = new Set(dismissed.map(row => String(row.analytics_event_id)));
+    const dismissedIds = readDismissedWhatsappIds();
     events = events.filter(event => !dismissedIds.has(String(event.id)));
     const activity = new Map();
     for (const event of events) {
