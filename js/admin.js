@@ -574,6 +574,8 @@ const financeStatus = document.querySelector('#financeStatus');
 const financeTotals = document.querySelector('#financeTotals');
 const financeLedger = document.querySelector('#financeLedger');
 const expenseBreakdown = document.querySelector('#expenseBreakdown');
+const financePendingWhatsapp = document.querySelector('#financePendingWhatsapp');
+const financePendingStatus = document.querySelector('#financePendingStatus');
 const financeCategoryLabels = { sale: 'Venta', delivery: 'Delivery pagado', gasolina: 'Gasolina', material_moto: 'Materiales de moto', productos: 'Compra de inventario', empaque: 'Empaques', otros: 'Otros gastos' };
 const financeSaleProduct = document.querySelector('#financeSaleProduct');
 let latestFinanceEntries = [];
@@ -664,9 +666,31 @@ async function loadFinanceEntries() {
     latestFinanceEntries = all;
     paintFinance(all);
     financeStatus.textContent = `${all.length} movimientos registrados · montos en soles`;
-    await loadFinanceProductPerformance();
+    await Promise.all([loadFinanceProductPerformance(), loadPendingWhatsappOrders()]);
   } catch (error) {
     financeStatus.textContent = /store_finance_entries|404|relation/i.test(error.message) ? 'Primero ejecuta supabase/add-store-finances.sql en Supabase → SQL Editor.' : `No se pudieron cargar las finanzas: ${error.message}`;
+  }
+}
+async function loadPendingWhatsappOrders() {
+  if (!financePendingWhatsapp || !financePendingStatus) return;
+  try {
+    let events = [], offset = 0, page;
+    do {
+      page = await request(`/rest/v1/store_analytics_events?select=id,event_type,product_id,product_name,quantity,created_at&event_type=eq.whatsapp_click&order=created_at.desc&limit=1000&offset=${offset}`);
+      events.push(...(page || [])); offset += 1000;
+    } while (page && page.length === 1000);
+    let links = [], linkOffset = 0, linkPage;
+    do {
+      linkPage = await request(`/rest/v1/store_finance_entries?select=analytics_event_id&analytics_event_id=not.is.null&limit=1000&offset=${linkOffset}`);
+      links.push(...(linkPage || [])); linkOffset += 1000;
+    } while (linkPage && linkPage.length === 1000);
+    const recorded = new Set(links.map(row => String(row.analytics_event_id)));
+    const pending = events.filter(event => !recorded.has(String(event.id)));
+    financePendingWhatsapp.innerHTML = pending.map(event => `<tr><td>${financeDate(event.created_at)}</td><td>${escapeHtml(event.product_name || 'Producto')}</td><td>${Math.max(1, Number(event.quantity || 1))} u.</td><td><button class="finance-review" type="button" data-whatsapp-review="${escapeHtml(event.id)}" data-product-id="${escapeHtml(event.product_id || '')}">Revisar pedido</button></td></tr>`).join('') || '<tr><td colspan="4">No hay pedidos pendientes de revisar.</td></tr>';
+    financePendingStatus.textContent = `${pending.length} clics de WhatsApp pendientes · cada clic se revisa antes de contarlo como venta.`;
+  } catch (error) {
+    financePendingWhatsapp.innerHTML = '<tr><td colspan="4">Falta activar la vinculación de pedidos por WhatsApp en Supabase.</td></tr>';
+    financePendingStatus.textContent = 'Ejecuta supabase/link-whatsapp-orders-to-finance.sql en Supabase → SQL Editor para habilitar confirmación y evitar ventas duplicadas.';
   }
 }
 async function submitFinance(form, entryType) {
@@ -690,6 +714,8 @@ async function submitFinance(form, entryType) {
       return;
     }
     payload = { entry_type: 'sale', category: 'sale', description, amount, product_id: product?.id || null, quantity, cost_amount: Number((unitCost * quantity).toFixed(2)), created_at: createdAt.toISOString() };
+    const analyticsEventId = String(data.get('analytics_event_id') || '');
+    if (analyticsEventId) payload.analytics_event_id = Number(analyticsEventId);
   } else {
     payload = { entry_type: 'expense', category: String(data.get('category')), description, amount, created_at: createdAt.toISOString() };
   }
@@ -728,6 +754,35 @@ financeDialog.addEventListener('click', event => { if (event.target === financeD
 financeSaleProduct.addEventListener('change', () => syncFinanceSaleFields({ useCurrentPrices: true }));
 document.querySelector('#financeSaleForm').elements.quantity.addEventListener('input', () => syncFinanceSaleFields());
 document.querySelector('#financeSaleForm').elements.unit_price.addEventListener('input', () => syncFinanceSaleFields());
+financePendingWhatsapp.addEventListener('click', event => {
+  const button = event.target.closest('[data-whatsapp-review]');
+  if (!button) return;
+  const row = button.closest('tr');
+  const cells = row.querySelectorAll('td');
+  const eventId = button.dataset.whatsappReview;
+  const productName = cells[1].textContent.trim();
+  const quantity = Math.max(1, Number.parseInt(cells[2].textContent, 10) || 1);
+  const eventRecord = products.find(product => String(product.id) === String(button.dataset.productId));
+  const form = document.querySelector('#financeSaleForm');
+  const productId = button.dataset.productId || '';
+  financeSaleProduct.value = products.some(product => String(product.id) === productId) ? productId : '';
+  form.elements.analytics_event_id.value = eventId;
+  form.elements.created_at.value = financeDateInputValue();
+  form.elements.quantity.value = String(quantity);
+  if (eventRecord) {
+    form.elements.unit_price.value = Number(eventRecord.price || 0).toFixed(2);
+    form.elements.unit_cost.value = Number(eventRecord.cost_price || 0).toFixed(2);
+    form.elements.description.value = `${eventRecord.name} × ${quantity}`;
+  } else {
+    form.elements.unit_price.value = '';
+    form.elements.unit_cost.value = '0';
+    form.elements.description.value = `${productName} × ${quantity}`;
+  }
+  form.elements.amount.value = eventRecord ? (Number(eventRecord.price || 0) * quantity).toFixed(2) : '';
+  form.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  financeStatus.textContent = 'Pedido cargado para revisión. Confirma el pago y verifica precio y costo antes de guardarlo como venta.';
+});
+financeSaleProduct.addEventListener('change', () => { document.querySelector('#financeSaleForm').elements.analytics_event_id.value = ''; syncFinanceSaleFields({ useCurrentPrices: true }); });
 document.querySelector('#financeSaleForm').addEventListener('submit', event => { event.preventDefault(); submitFinance(event.currentTarget, 'sale'); });
 document.querySelector('#financeExpenseForm').addEventListener('submit', event => { event.preventDefault(); submitFinance(event.currentTarget, 'expense'); });
 document.querySelectorAll('#financeSaleForm, #financeExpenseForm').forEach(form => form.addEventListener('reset', () => setTimeout(setFinanceDateDefaults)));
