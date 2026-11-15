@@ -568,23 +568,90 @@ document.querySelector('#openAnalytics').addEventListener('click',()=>{analytics
 document.querySelector('#closeAnalytics').addEventListener('click',()=>analyticsDialog.close());
 analyticsDialog.addEventListener('click',e=>{if(e.target===analyticsDialog)analyticsDialog.close()});
 
-// Finanzas: ventas confirmadas y gastos registrados manualmente.
+// Finanzas: ingresos confirmados, costo vendido, compras de inventario y gastos operativos.
 const financeDialog = document.querySelector('#adminFinance');
 const financeStatus = document.querySelector('#financeStatus');
 const financeTotals = document.querySelector('#financeTotals');
 const financeLedger = document.querySelector('#financeLedger');
 const expenseBreakdown = document.querySelector('#expenseBreakdown');
-const financeCategoryLabels = { sale: 'Venta', delivery: 'Delivery', gasolina: 'Gasolina', material_moto: 'Materiales de moto', productos: 'Compra de productos', empaque: 'Empaques', otros: 'Otros' };
+const financeCategoryLabels = { sale: 'Venta', delivery: 'Delivery pagado', gasolina: 'Gasolina', material_moto: 'Materiales de moto', productos: 'Compra de inventario', empaque: 'Empaques', otros: 'Otros gastos' };
+const financeSaleProduct = document.querySelector('#financeSaleProduct');
+let latestFinanceEntries = [];
 function financeMoney(value) { return `S/ ${Number(value || 0).toFixed(2)}`; }
 function financeDate(value) { return new Intl.DateTimeFormat('es-PE', { timeZone: 'America/Lima', dateStyle: 'short', timeStyle: 'short', hourCycle: 'h23' }).format(new Date(value)); }
+function financeLimaDayKey(value) {
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Lima', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date(value));
+  const part = type => parts.find(item => item.type === type)?.value || '';
+  return `${part('year')}-${part('month')}-${part('day')}`;
+}
+function financeDateInputValue(date = new Date()) {
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  return local.toISOString().slice(0, 16);
+}
+function setFinanceDateDefaults() {
+  document.querySelectorAll('#financeSaleForm [name="created_at"], #financeExpenseForm [name="created_at"]').forEach(input => { if (!input.value) input.value = financeDateInputValue(); });
+}
+function refreshFinanceSaleProducts() {
+  const selected = financeSaleProduct.value;
+  financeSaleProduct.innerHTML = '<option value="">Venta general</option>' + products.map(product => `<option value="${escapeHtml(product.id)}">${escapeHtml(product.name)} · costo ${financeMoney(product.cost_price)}</option>`).join('');
+  if (products.some(product => String(product.id) === selected)) financeSaleProduct.value = selected;
+}
+function syncFinanceSaleFields({ useCurrentPrices = false } = {}) {
+  const form = document.querySelector('#financeSaleForm');
+  const product = products.find(item => String(item.id) === financeSaleProduct.value);
+  const quantity = Math.max(1, Number(form.elements.quantity.value) || 1);
+  if (product && useCurrentPrices) {
+    form.elements.unit_price.value = Number(product.price || 0).toFixed(2);
+    form.elements.unit_cost.value = Number(product.cost_price || 0).toFixed(2);
+  }
+  if (product) form.elements.description.value = `${product.name} × ${quantity}`;
+  form.elements.amount.value = (Math.max(0, Number(form.elements.unit_price.value) || 0) * quantity).toFixed(2);
+}
 function paintFinance(entries) {
-  const sales = entries.filter((entry) => entry.entry_type === 'sale').reduce((sum, entry) => sum + Number(entry.amount), 0);
-  const expenses = entries.filter((entry) => entry.entry_type === 'expense').reduce((sum, entry) => sum + Number(entry.amount), 0);
-  financeTotals.innerHTML = `<article><span>Ventas confirmadas</span><strong>${financeMoney(sales)}</strong></article><article><span>Gastos registrados</span><strong>${financeMoney(expenses)}</strong></article><article><span>Ganancia neta estimada</span><strong>${financeMoney(sales - expenses)}</strong></article>`;
-  const grouped = new Map();
-  entries.filter((entry) => entry.entry_type === 'expense').forEach((entry) => grouped.set(entry.category, (grouped.get(entry.category) || 0) + Number(entry.amount)));
-  expenseBreakdown.innerHTML = grouped.size ? `<ul class="finance-breakdown">${[...grouped].sort((a, b) => b[1] - a[1]).map(([category, amount]) => `<li><span>${escapeHtml(financeCategoryLabels[category] || category)}</span><strong>${financeMoney(amount)}</strong></li>`).join('')}</ul>` : '<p>Aún no hay gastos registrados.</p>';
-  financeLedger.innerHTML = entries.map((entry) => `<tr><td>${financeDate(entry.created_at)}</td><td>${entry.entry_type === 'sale' ? 'Venta' : 'Gasto'}</td><td>${escapeHtml(entry.description)}</td><td>${escapeHtml(financeCategoryLabels[entry.category] || entry.category)}</td><td>${financeMoney(entry.amount)}</td><td><button class="finance-delete" type="button" data-finance-delete="${entry.id}" aria-label="Eliminar movimiento">Eliminar</button></td></tr>`).join('') || '<tr><td colspan="6">Aún no hay movimientos financieros.</td></tr>';
+  const salesEntries = entries.filter(entry => entry.entry_type === 'sale');
+  const expenseEntries = entries.filter(entry => entry.entry_type === 'expense');
+  const sales = salesEntries.reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
+  const cogs = salesEntries.reduce((sum, entry) => sum + Number(entry.cost_amount || 0), 0);
+  const inventoryPurchases = expenseEntries.filter(entry => entry.category === 'productos').reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
+  const operatingExpenses = expenseEntries.filter(entry => entry.category !== 'productos').reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
+  const profit = sales - cogs - operatingExpenses;
+  const cashFlow = sales - inventoryPurchases - operatingExpenses;
+  financeTotals.innerHTML = `<article><span>Ventas confirmadas</span><strong>${financeMoney(sales)}</strong></article><article><span>Costo de productos vendidos</span><strong>${financeMoney(cogs)}</strong></article><article><span>Gastos operativos</span><strong>${financeMoney(operatingExpenses)}</strong></article><article><span>Compras de inventario pagadas</span><strong>${financeMoney(inventoryPurchases)}</strong></article><article><span>Ganancia estimada</span><strong>${financeMoney(profit)}</strong></article><article><span>Flujo de caja registrado</span><strong>${financeMoney(cashFlow)}</strong></article>`;
+
+  const today = new Date();
+  const trend = Array.from({ length: 14 }, (_, index) => {
+    const day = new Date(today);
+    day.setDate(today.getDate() - 13 + index);
+    const key = financeLimaDayKey(day);
+    const amount = salesEntries.filter(entry => financeLimaDayKey(entry.created_at) === key).reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
+    return { label: new Intl.DateTimeFormat('es-PE', { timeZone: 'America/Lima', dateStyle: 'medium' }).format(day), shortLabel: key.slice(5), value: amount };
+  });
+  renderInteractiveChart(document.querySelector('#financeTrendChart'), trend, 'line', 'vertical');
+  renderInteractiveChart(document.querySelector('#financeShareChart'), [
+    { label: 'Ventas confirmadas', value: sales, color: '#54a17c' },
+    { label: 'Costo de productos vendidos', value: cogs, color: '#d89a55' },
+    { label: 'Gastos operativos', value: operatingExpenses, color: '#d76b83' }
+  ], 'pie', 'vertical');
+
+  const categories = new Map();
+  expenseEntries.forEach(entry => categories.set(entry.category, (categories.get(entry.category) || 0) + Number(entry.amount || 0)));
+  if (cogs > 0) categories.set('costo_productos', cogs);
+  renderInteractiveChart(expenseBreakdown, [...categories].sort((a, b) => b[1] - a[1]).map(([category, value]) => ({
+    label: category === 'costo_productos' ? 'Costo de productos vendidos' : financeCategoryLabels[category] || category,
+    value
+  })), 'bar', 'horizontal');
+
+  financeLedger.innerHTML = entries.map(entry => {
+    const isSale = entry.entry_type === 'sale';
+    const isInventory = !isSale && entry.category === 'productos';
+    const quantity = Math.max(1, Number(entry.quantity || 1));
+    const product = isSale && entry.product_id ? products.find(item => String(item.id) === String(entry.product_id)) : null;
+    const unitSale = isSale ? Number(entry.amount || 0) / quantity : null;
+    const unitCost = isSale ? Number(entry.cost_amount || 0) / quantity : null;
+    const type = isSale ? 'Venta confirmada' : isInventory ? 'Compra de inventario' : 'Gasto operativo';
+    const item = product?.name || (isSale ? 'Venta general' : financeCategoryLabels[entry.category] || entry.category);
+    return `<tr><td>${financeDate(entry.created_at)}</td><td>${type}</td><td>${escapeHtml(entry.description)}</td><td>${escapeHtml(item)}</td><td>${isSale ? `${quantity} u.` : '—'}</td><td>${isSale ? financeMoney(unitSale) : '—'}</td><td>${isSale ? financeMoney(unitCost) : '—'}</td><td>${financeMoney(entry.amount)}</td><td>${isSale ? financeMoney(entry.cost_amount) : '—'}</td><td><button class="finance-delete" type="button" data-finance-delete="${escapeHtml(entry.id)}" aria-label="Eliminar movimiento">Eliminar</button></td></tr>`;
+  }).join('') || '<tr><td colspan="10">Aún no hay movimientos financieros.</td></tr>';
 }
 async function loadFinanceEntries() {
   financeStatus.textContent = 'Cargando movimientos…';
@@ -594,8 +661,10 @@ async function loadFinanceEntries() {
       page = await request(`/rest/v1/store_finance_entries?select=id,entry_type,description,category,amount,product_id,quantity,cost_amount,created_at&order=created_at.desc&limit=1000&offset=${offset}`);
       all.push(...(page || [])); offset += 1000;
     } while (page && page.length === 1000);
+    latestFinanceEntries = all;
     paintFinance(all);
     financeStatus.textContent = `${all.length} movimientos registrados · montos en soles`;
+    await loadFinanceProductPerformance();
   } catch (error) {
     financeStatus.textContent = /store_finance_entries|404|relation/i.test(error.message) ? 'Primero ejecuta supabase/add-store-finances.sql en Supabase → SQL Editor.' : `No se pudieron cargar las finanzas: ${error.message}`;
   }
@@ -604,24 +673,67 @@ async function submitFinance(form, entryType) {
   const data = new FormData(form);
   const description = String(data.get('description') || '').trim();
   const amount = Number(data.get('amount'));
-  if (!description || !Number.isFinite(amount) || amount <= 0) { financeStatus.textContent = 'Escribe una descripción y un monto mayor que cero.'; return; }
-  const category = entryType === 'sale' ? 'sale' : String(data.get('category'));
-  const button = form.querySelector('button[type="submit"]'); button.disabled = true;
+  const createdAt = new Date(String(data.get('created_at') || ''));
+  if (!description || !Number.isFinite(amount) || amount <= 0 || Number.isNaN(createdAt.getTime())) {
+    financeStatus.textContent = 'Completa fecha, descripción y un monto mayor que cero.';
+    return;
+  }
+  let payload;
+  if (entryType === 'sale') {
+    const productId = String(data.get('product_id') || '');
+    const product = products.find(item => String(item.id) === productId);
+    const quantity = Number(data.get('quantity'));
+    const unitPrice = Number(data.get('unit_price'));
+    const unitCost = Number(data.get('unit_cost'));
+    if (!Number.isInteger(quantity) || quantity < 1 || !Number.isFinite(unitPrice) || unitPrice <= 0 || !Number.isFinite(unitCost) || unitCost < 0) {
+      financeStatus.textContent = 'Revisa cantidad y precios unitarios de venta y costo.';
+      return;
+    }
+    payload = { entry_type: 'sale', category: 'sale', description, amount, product_id: product?.id || null, quantity, cost_amount: Number((unitCost * quantity).toFixed(2)), created_at: createdAt.toISOString() };
+  } else {
+    payload = { entry_type: 'expense', category: String(data.get('category')), description, amount, created_at: createdAt.toISOString() };
+  }
+  const button = form.querySelector('button[type="submit"]');
+  button.disabled = true;
   try {
-    await request('/rest/v1/store_finance_entries', { method: 'POST', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' }, body: JSON.stringify({ entry_type: entryType, category, description, amount }) });
-    form.reset(); await loadFinanceEntries(); financeStatus.textContent = entryType === 'sale' ? 'Venta confirmada registrada.' : 'Gasto registrado.';
+    await request('/rest/v1/store_finance_entries', { method: 'POST', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' }, body: JSON.stringify(payload) });
+    form.reset();
+    if (entryType === 'sale') {
+      form.elements.quantity.value = '1';
+      form.elements.unit_price.value = '';
+      form.elements.unit_cost.value = '0';
+      financeSaleProduct.value = '';
+    }
+    setFinanceDateDefaults();
+    await loadFinanceEntries();
+    financeStatus.textContent = entryType === 'sale' ? 'Venta confirmada registrada con su costo histórico.' : payload.category === 'productos' ? 'Compra de inventario registrada; no se duplicará como gasto de la ganancia.' : 'Gasto operativo registrado.';
   } catch (error) {
-    financeStatus.textContent = /store_finance_entries|404|relation/i.test(error.message) ? 'Ejecuta primero supabase/add-store-finances.sql en Supabase → SQL Editor.' : `No se pudo guardar: ${error.message}`;
-  } finally { button.disabled = false; }
+    financeStatus.textContent = /store_finance_entries|404|relation/i.test(error.message)
+      ? 'Falta crear store_finance_entries en Supabase. Ejecuta primero supabase/add-store-finances.sql.'
+      : /created_at|cost_amount|product_id|quantity|schema cache|column/i.test(error.message)
+        ? 'Faltan columnas de Finanzas en Supabase. Ejecuta supabase/add-product-cost-and-finance.sql y verifica created_at.'
+        : `No se pudo guardar: ${error.message}`;
+  } finally {
+    button.disabled = false;
+  }
 }
-document.querySelector('#openFinance').addEventListener('click', () => { financeDialog.showModal(); loadFinanceEntries(); });
+document.querySelector('#openFinance').addEventListener('click', () => {
+  financeDialog.showModal();
+  refreshFinanceSaleProducts();
+  setFinanceDateDefaults();
+  loadFinanceEntries();
+});
 document.querySelector('#closeFinance').addEventListener('click', () => financeDialog.close());
-financeDialog.addEventListener('click', (event) => { if (event.target === financeDialog) financeDialog.close(); });
-document.querySelector('#financeSaleForm').addEventListener('submit', (event) => { event.preventDefault(); submitFinance(event.currentTarget, 'sale'); });
-document.querySelector('#financeExpenseForm').addEventListener('submit', (event) => { event.preventDefault(); submitFinance(event.currentTarget, 'expense'); });
-financeLedger.addEventListener('click', async (event) => {
-  const button = event.target.closest('[data-finance-delete]'); if (!button) return;
-  if (!window.confirm('¿Eliminar este movimiento financiero?')) return;
+financeDialog.addEventListener('click', event => { if (event.target === financeDialog) financeDialog.close(); });
+financeSaleProduct.addEventListener('change', () => syncFinanceSaleFields({ useCurrentPrices: true }));
+document.querySelector('#financeSaleForm').elements.quantity.addEventListener('input', () => syncFinanceSaleFields());
+document.querySelector('#financeSaleForm').elements.unit_price.addEventListener('input', () => syncFinanceSaleFields());
+document.querySelector('#financeSaleForm').addEventListener('submit', event => { event.preventDefault(); submitFinance(event.currentTarget, 'sale'); });
+document.querySelector('#financeExpenseForm').addEventListener('submit', event => { event.preventDefault(); submitFinance(event.currentTarget, 'expense'); });
+document.querySelectorAll('#financeSaleForm, #financeExpenseForm').forEach(form => form.addEventListener('reset', () => setTimeout(setFinanceDateDefaults)));
+financeLedger.addEventListener('click', async event => {
+  const button = event.target.closest('[data-finance-delete]');
+  if (!button || !window.confirm('¿Eliminar este movimiento financiero?')) return;
   button.disabled = true;
   try { await request(`/rest/v1/store_finance_entries?id=eq.${encodeURIComponent(button.dataset.financeDelete)}`, { method: 'DELETE', headers: { Prefer: 'return=minimal' } }); await loadFinanceEntries(); }
   catch (error) { financeStatus.textContent = `No se pudo eliminar: ${error.message}`; button.disabled = false; }
@@ -653,162 +765,7 @@ function renderInteractiveChart(node, points, initialMode='bar', initialOrientat
 function drawEventChart(node,events,type,color){const data=Array.from({length:24},(_,hour)=>events.filter(event=>event.event_type===type&&limaHour(event.created_at)===hour).length);renderInteractiveChart(node,data.map((value,hour)=>({label:`${String(hour).padStart(2,'0')}:00`,shortLabel:String(hour).padStart(2,'0'),value,color})),'bar','vertical')}
 const paintAnalyticsWithCharts=paintAnalytics;
 paintAnalytics=function(events){paintAnalyticsWithCharts(events);const adds=events.filter(event=>event.event_type==='add_to_cart'),whatsapp=events.filter(event=>event.event_type==='whatsapp_click');renderInteractiveChart(document.querySelector('#interactionChart'),[{label:'Agregados al carrito',value:adds.length,color:'#96556e'},{label:'Clics en WhatsApp',value:whatsapp.length,color:'#54a17c'}],'pie','vertical')};
-const paintFinanceWithCharts=paintFinance;
-paintFinance=function(entries){paintFinanceWithCharts(entries);const dayKey=value=>new Intl.DateTimeFormat('en-CA',{timeZone:'America/Lima',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(value));const today=new Date();const days=Array.from({length:14},(_,index)=>{const date=new Date(today);date.setDate(today.getDate()-13+index);const key=dayKey(date);const dayEntries=entries.filter(entry=>dayKey(entry.created_at)===key);return{label:new Intl.DateTimeFormat('es-PE',{timeZone:'America/Lima',day:'2-digit',month:'2-digit'}).format(date),value:dayEntries.filter(entry=>entry.entry_type==='sale').reduce((sum,entry)=>sum+Number(entry.amount),0)}});renderInteractiveChart(document.querySelector('#financeTrendChart'),days,'line','vertical');const sales=entries.filter(entry=>entry.entry_type==='sale').reduce((sum,entry)=>sum+Number(entry.amount),0),expenses=entries.filter(entry=>entry.entry_type==='expense').reduce((sum,entry)=>sum+Number(entry.amount),0);renderInteractiveChart(document.querySelector('#financeShareChart'),[{label:'Ventas',value:sales,color:'#54a17c'},{label:'Gastos',value:expenses,color:'#d76b83'}],'pie','vertical');const grouped=new Map();entries.filter(entry=>entry.entry_type==='expense').forEach(entry=>grouped.set(entry.category,(grouped.get(entry.category)||0)+Number(entry.amount)));renderInteractiveChart(document.querySelector('#expenseBreakdown'),[...grouped].sort((a,b)=>b[1]-a[1]).map(([category,value])=>({label:financeCategoryLabels[category]||category,value})),'bar','horizontal')};
-document.addEventListener('change',event=>{const chart=event.target.closest('[data-chart-mode], [data-chart-orientation]')?.closest('.analytics-chart');if(chart?.chartPoints)renderInteractiveChart(chart,chart.chartPoints)});
-
-// Enlace del costo de cada producto con las ventas confirmadas de Finanzas.
-const financeSaleProduct = document.querySelector('#financeSaleProduct');
-function refreshFinanceSaleProducts() {
-  const selected = financeSaleProduct.value;
-  financeSaleProduct.innerHTML = '<option value="">Venta general (sin costo automático)</option>' + products.map(product => `<option value="${escapeHtml(product.id)}">${escapeHtml(product.name)} · costo ${financeMoney(product.cost_price)}</option>`).join('');
-  if (products.some(product => String(product.id) === selected)) financeSaleProduct.value = selected;
-}
-function syncFinanceSaleProduct() {
-  const product = products.find(item => String(item.id) === financeSaleProduct.value);
-  if (!product) return;
-  const form = document.querySelector('#financeSaleForm');
-  const quantity = Math.max(1, Number(form.elements.quantity.value) || 1);
-  form.elements.description.value = `${product.name} × ${quantity}`;
-  form.elements.amount.value = (Number(product.price) * quantity).toFixed(2);
-}
-document.querySelector('#openFinance').addEventListener('click', refreshFinanceSaleProducts);
-financeSaleProduct.addEventListener('change', syncFinanceSaleProduct);
-document.querySelector('#financeSaleForm').elements.quantity.addEventListener('input', syncFinanceSaleProduct);
-const submitFinanceWithProductCost = submitFinance;
-submitFinance = async function(form, entryType) {
-  if (entryType !== 'sale') return submitFinanceWithProductCost(form, entryType);
-  const data = new FormData(form);
-  const productId = String(data.get('product_id') || '');
-  const product = products.find(item => String(item.id) === productId);
-  const quantity = Number(data.get('quantity'));
-  const description = String(data.get('description') || '').trim();
-  const amount = Number(data.get('amount'));
-  if (!description || !Number.isInteger(quantity) || quantity < 1 || !Number.isFinite(amount) || amount <= 0) {
-    financeStatus.textContent = 'Revisa el producto, la cantidad y el monto recibido.'; return;
-  }
-  const costAmount = product ? Number(product.cost_price || 0) * quantity : 0;
-  const button = form.querySelector('button[type="submit"]'); button.disabled = true;
-  try {
-    await request('/rest/v1/store_finance_entries', { method: 'POST', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' }, body: JSON.stringify({ entry_type: 'sale', category: 'sale', description, amount, product_id: product?.id || null, quantity, cost_amount: costAmount }) });
-    form.reset(); form.elements.quantity.value = '1'; financeSaleProduct.value = ''; await loadFinanceEntries(); financeStatus.textContent = `Venta registrada; costo aplicado: ${financeMoney(costAmount)}.`;
-  } catch (error) {
-    financeStatus.textContent = /cost_amount|product_id|quantity|schema cache|column/i.test(error.message) ? 'Actualiza Supabase ejecutando supabase/add-product-cost-and-finance.sql en SQL Editor.' : `No se pudo guardar: ${error.message}`;
-  } finally { button.disabled = false; }
-};
-const paintFinanceWithProductCost = paintFinance;
-paintFinance = function(entries) {
-  paintFinanceWithProductCost(entries);
-  const sales=entries.filter(entry=>entry.entry_type==='sale').reduce((sum,entry)=>sum+Number(entry.amount),0);
-  const expenses=entries.filter(entry=>entry.entry_type==='expense').reduce((sum,entry)=>sum+Number(entry.amount),0);
-  const productCosts=entries.filter(entry=>entry.entry_type==='sale').reduce((sum,entry)=>sum+Number(entry.cost_amount||0),0);
-  financeTotals.innerHTML=`<article><span>Ventas confirmadas</span><strong>${financeMoney(sales)}</strong></article><article><span>Gastos registrados</span><strong>${financeMoney(expenses)}</strong></article><article><span>Costo de productos vendidos</span><strong>${financeMoney(productCosts)}</strong></article><article><span>Ganancia neta estimada</span><strong>${financeMoney(sales-expenses-productCosts)}</strong></article>`;
-  const grouped=new Map();entries.filter(entry=>entry.entry_type==='expense').forEach(entry=>grouped.set(entry.category,(grouped.get(entry.category)||0)+Number(entry.amount)));
-  if(productCosts) grouped.set('costo_productos',productCosts);
-  renderInteractiveChart(document.querySelector('#expenseBreakdown'),[...grouped].sort((a,b)=>b[1]-a[1]).map(([category,value])=>({label:category==='costo_productos'?'Costo de productos vendidos':financeCategoryLabels[category]||category,value})),'bar','horizontal');
-  financeLedger.innerHTML=entries.map(entry=>`<tr><td>${financeDate(entry.created_at)}</td><td>${entry.entry_type==='sale'?'Venta':'Gasto'}</td><td>${escapeHtml(entry.description)}</td><td>${escapeHtml(entry.entry_type==='sale'&&entry.product_id?(products.find(product=>String(product.id)===String(entry.product_id))?.name||'Producto'):financeCategoryLabels[entry.category]||entry.category)}</td><td>${financeMoney(entry.amount)}</td><td>${entry.entry_type==='sale'?`${Number(entry.quantity||1)} u. · ${financeMoney(entry.cost_amount)}`:'—'}</td><td><button class="finance-delete" type="button" data-finance-delete="${entry.id}" aria-label="Eliminar movimiento">Eliminar</button></td></tr>`).join('')||'<tr><td colspan="7">Aún no hay movimientos financieros.</td></tr>';
-};
-const paintFinanceChartsWithCosts = paintFinance;
-paintFinance = function(entries) {
-  paintFinanceChartsWithCosts(entries);
-  const sales=entries.filter(entry=>entry.entry_type==='sale').reduce((sum,entry)=>sum+Number(entry.amount),0);
-  const expenses=entries.filter(entry=>entry.entry_type==='expense').reduce((sum,entry)=>sum+Number(entry.amount),0);
-  const productCosts=entries.filter(entry=>entry.entry_type==='sale').reduce((sum,entry)=>sum+Number(entry.cost_amount||0),0);
-  renderInteractiveChart(document.querySelector('#financeShareChart'),[{label:'Ventas',value:sales,color:'#54a17c'},{label:'Gastos operativos',value:expenses,color:'#d76b83'},{label:'Costo de productos vendidos',value:productCosts,color:'#d89a55'}],'pie','vertical');
-};
-
-// Fechas históricas, precios unitarios guardados como fotografía del momento y conciliación por producto.
-function setFinanceDateDefaults() {
-  const now = new Date();
-  const local = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
-  document.querySelectorAll('#financeSaleForm [name="created_at"], #financeExpenseForm [name="created_at"]').forEach(input => { if (!input.value) input.value = local; });
-}
-function recalculateHistoricalSale() {
-  const form = document.querySelector('#financeSaleForm');
-  const quantity = Math.max(1, Number(form.elements.quantity.value) || 1);
-  const unitPrice = Number(form.elements.unit_price.value) || 0;
-  form.elements.amount.value = (unitPrice * quantity).toFixed(2);
-  const product = products.find(item => String(item.id) === financeSaleProduct.value);
-  if (product) form.elements.description.value = `${product.name} × ${quantity}`;
-}
-financeSaleProduct.addEventListener('change', () => {
-  const product = products.find(item => String(item.id) === financeSaleProduct.value);
-  if (!product) return;
-  const form = document.querySelector('#financeSaleForm');
-  form.elements.unit_price.value = Number(product.price || 0).toFixed(2);
-  form.elements.unit_cost.value = Number(product.cost_price || 0).toFixed(2);
-  recalculateHistoricalSale();
-});
-document.querySelector('#financeSaleForm').elements.quantity.addEventListener('input', recalculateHistoricalSale);
-document.querySelector('#financeSaleForm').elements.unit_price.addEventListener('input', recalculateHistoricalSale);
-document.querySelector('#financeSaleForm').addEventListener('reset', () => setTimeout(setFinanceDateDefaults));
-document.querySelector('#financeExpenseForm').addEventListener('reset', () => setTimeout(setFinanceDateDefaults));
-document.querySelector('#openFinance').addEventListener('click', setFinanceDateDefaults);
-
-const submitFinanceWithHistoricalPrices = submitFinance;
-submitFinance = async function(form, entryType) {
-  const data = new FormData(form);
-  const description = String(data.get('description') || '').trim();
-  const amount = Number(data.get('amount'));
-  const createdAt = new Date(String(data.get('created_at') || ''));
-  if (!description || !Number.isFinite(amount) || amount <= 0 || Number.isNaN(createdAt.getTime())) {
-    financeStatus.textContent = 'Completa una fecha válida, descripción y monto mayor que cero.'; return;
-  }
-  let payload;
-  if (entryType === 'sale') {
-    const productId = String(data.get('product_id') || '');
-    const product = products.find(item => String(item.id) === productId);
-    const quantity = Number(data.get('quantity'));
-    const unitPrice = Number(data.get('unit_price'));
-    const unitCost = Number(data.get('unit_cost'));
-    if (!Number.isInteger(quantity) || quantity < 1 || !Number.isFinite(unitPrice) || unitPrice <= 0 || !Number.isFinite(unitCost) || unitCost < 0) {
-      financeStatus.textContent = 'Revisa cantidad y precios unitarios de venta y costo.'; return;
-    }
-    payload = { entry_type: 'sale', category: 'sale', description, amount, product_id: product?.id || null, quantity, cost_amount: unitCost * quantity, created_at: createdAt.toISOString() };
-  } else {
-    payload = { entry_type: 'expense', category: String(data.get('category')), description, amount, product_id: null, quantity: 1, cost_amount: 0, created_at: createdAt.toISOString() };
-  }
-  const button = form.querySelector('button[type="submit"]'); button.disabled = true;
-  try {
-    await request('/rest/v1/store_finance_entries', { method: 'POST', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' }, body: JSON.stringify(payload) });
-    form.reset(); await loadFinanceEntries();
-    financeStatus.textContent = entryType === 'sale' ? 'Venta histórica registrada con sus precios y costo de esa fecha.' : 'Gasto registrado con su fecha.';
-  } catch (error) {
-    financeStatus.textContent = /created_at|cost_amount|product_id|quantity|schema cache|column/i.test(error.message) ? 'Faltan columnas de Finanzas en Supabase. Ejecuta supabase/add-product-cost-and-finance.sql y confirma que store_finance_entries tenga created_at.' : `No se pudo guardar: ${error.message}`;
-  } finally { button.disabled = false; }
-};
-
-paintFinance = function(entries) {
-  const salesEntries = entries.filter(entry => entry.entry_type === 'sale');
-  const expenseEntries = entries.filter(entry => entry.entry_type === 'expense');
-  const sales = salesEntries.reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
-  const inventoryPurchases = expenseEntries.filter(entry => entry.category === 'productos').reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
-  const operatingExpenses = expenseEntries.filter(entry => entry.category !== 'productos').reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
-  const cogs = salesEntries.reduce((sum, entry) => sum + Number(entry.cost_amount || 0), 0);
-  financeTotals.innerHTML = `<article><span>Ventas confirmadas</span><strong>${financeMoney(sales)}</strong></article><article><span>Gastos operativos</span><strong>${financeMoney(operatingExpenses)}</strong></article><article><span>Compras de inventario (caja)</span><strong>${financeMoney(inventoryPurchases)}</strong></article><article><span>Costo de productos vendidos</span><strong>${financeMoney(cogs)}</strong></article><article><span>Ganancia estimada</span><strong>${financeMoney(sales - operatingExpenses - cogs)}</strong></article>`;
-  const days = new Map();
-  for (const entry of entries) {
-    const key = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Lima', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(entry.created_at));
-    const day = days.get(key) || { sales: 0, expenses: 0 };
-    if (entry.entry_type === 'sale') day.sales += Number(entry.amount || 0); else day.expenses += Number(entry.amount || 0);
-    days.set(key, day);
-  }
-  const trend = [...days].sort(([a], [b]) => a.localeCompare(b)).map(([key, value]) => ({ label: key, shortLabel: key.slice(5), value: value.sales }));
-  renderInteractiveChart(document.querySelector('#financeTrendChart'), trend, 'line', 'vertical');
-  renderInteractiveChart(document.querySelector('#financeShareChart'), [{ label: 'Ventas', value: sales, color: '#54a17c' }, { label: 'Gastos operativos', value: operatingExpenses, color: '#d76b83' }, { label: 'Costo vendido', value: cogs, color: '#d89a55' }], 'pie', 'vertical');
-  const categories = new Map();
-  expenseEntries.forEach(entry => categories.set(entry.category, (categories.get(entry.category) || 0) + Number(entry.amount || 0)));
-  if (cogs) categories.set('costo_productos', cogs);
-  renderInteractiveChart(document.querySelector('#expenseBreakdown'), [...categories].sort((a, b) => b[1] - a[1]).map(([category, value]) => ({ label: category === 'costo_productos' ? 'Costo de productos vendidos' : financeCategoryLabels[category] || category, value })), 'bar', 'horizontal');
-  financeLedger.innerHTML = entries.map(entry => {
-    const isSale = entry.entry_type === 'sale';
-    const quantity = Number(entry.quantity || 1);
-    const product = isSale && entry.product_id ? products.find(item => String(item.id) === String(entry.product_id)) : null;
-    const unitSale = isSale ? Number(entry.amount || 0) / quantity : null;
-    const unitCost = isSale ? Number(entry.cost_amount || 0) / quantity : null;
-    return `<tr><td>${financeDate(entry.created_at)}</td><td>${isSale ? 'Venta' : 'Gasto'}</td><td>${escapeHtml(entry.description)}</td><td>${escapeHtml(product?.name || (isSale ? 'Venta general' : financeCategoryLabels[entry.category] || entry.category))}</td><td>${isSale ? `${quantity} u.` : '—'}</td><td>${isSale ? financeMoney(unitSale) : '—'}</td><td>${isSale ? financeMoney(unitCost) : '—'}</td><td>${financeMoney(entry.amount)}</td><td>${isSale ? financeMoney(entry.cost_amount) : '—'}</td><td><button class="finance-delete" type="button" data-finance-delete="${escapeHtml(entry.id)}" aria-label="Eliminar movimiento">Eliminar</button></td></tr>`;
-  }).join('') || '<tr><td colspan="10">Aún no hay movimientos financieros.</td></tr>';
-};
+document.addEventListener('change', event => { const chart = event.target.closest('[data-chart-mode], [data-chart-orientation]')?.closest('.analytics-chart'); if (chart?.chartPoints) renderInteractiveChart(chart, chart.chartPoints); });
 
 async function loadFinanceProductPerformance() {
   const body = document.querySelector('#financeProductPerformance');
@@ -898,17 +855,3 @@ async function renderSimilarCatalogProducts(activity, sold) {
     ? `${pairs.length} pares parecidos detectados · métricas en orden de producto A / producto B. Revisadas ${checked} de ${total} fotos.`
     : `No encontramos pares similares entre los productos activos. Revisadas ${checked} de ${total} fotos.`;
 }
-let latestFinanceEntries = [];
-const loadFinanceEntriesWithSnapshot = loadFinanceEntries;
-loadFinanceEntries = async function() {
-  await loadFinanceEntriesWithSnapshot();
-  try {
-    let all = [], offset = 0, page;
-    do {
-      page = await request(`/rest/v1/store_finance_entries?select=id,entry_type,product_id,quantity,amount,cost_amount,created_at&order=created_at.desc&limit=1000&offset=${offset}`);
-      all.push(...(page || [])); offset += 1000;
-    } while (page && page.length === 1000);
-    latestFinanceEntries = all;
-    await loadFinanceProductPerformance();
-  } catch { /* El panel de movimientos ya informa el error de carga. */ }
-};
