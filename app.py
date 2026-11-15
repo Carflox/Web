@@ -135,8 +135,12 @@ class SiteHandler(SimpleHTTPRequestHandler):
         super().__init__(*args, directory=str(ROOT), **kwargs)
 
     def log_message(self, fmt, *args):
-        # Avoid logging query strings or form data that may contain credentials.
-        super().log_message(fmt, *args)
+        # Never write query parameters (which may contain credentials) to logs.
+        safe_args = tuple(
+            value.split("?", 1)[0] + "?[redacted]" if isinstance(value, str) and "?" in value else value
+            for value in args
+        )
+        super().log_message(fmt, *safe_args)
 
     def send_json(self, status, payload, headers=None):
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
