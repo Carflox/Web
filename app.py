@@ -2,6 +2,9 @@
 
 import hashlib
 import hmac
+import base64
+import binascii
+import html
 import json
 import os
 import secrets
@@ -17,7 +20,7 @@ from urllib.parse import parse_qs, urlsplit
 from urllib.parse import unquote, quote
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 ROOT = Path(__file__).resolve().parent
 
@@ -160,6 +163,80 @@ class SiteHandler(SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def send_product_share_page(self, compact_id):
+        """Render social preview metadata for a product stored in local SQLite."""
+        if (len(compact_id) != 22
+                or any(char not in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-" for char in compact_id)):
+            return self.send_error(404, "Enlace de producto no válido")
+        try:
+            product_id = str(UUID(bytes=base64.b64decode(compact_id + "==", altchars=b"-_", validate=True)))
+        except (ValueError, binascii.Error):
+            return self.send_error(404, "Enlace de producto no válido")
+
+        with db() as conn:
+            product = conn.execute(
+                "SELECT id, name, price, image_path FROM products WHERE id=? AND is_active=1 LIMIT 1",
+                (product_id,),
+            ).fetchone()
+        if not product or not product["image_path"]:
+            return self.send_error(404, "No se encontró la foto del producto")
+
+        supabase_url = os.environ.get("SUPABASE_URL", "").rstrip("/")
+        bucket = os.environ.get("SUPABASE_PRODUCTS_BUCKET", "product-images")
+        if not supabase_url:
+            return self.send_error(503, "Falta configurar el almacenamiento de fotos")
+        safe_path = "/".join(quote(part, safe="") for part in str(product["image_path"]).split("/"))
+        image_url = html.escape(
+            f"{supabase_url}/storage/v1/object/public/{quote(bucket, safe='')}/{safe_path}",
+            quote=True,
+        )
+        title_text = str(product["name"] or "Producto YC NICE LADY")
+        title = html.escape(title_text, quote=True)
+        try:
+            price = f"S/ {float(product['price'] or 0):.2f}"
+        except (TypeError, ValueError):
+            price = ""
+        description = html.escape(f"{title_text} · {price} · YC NICE LADY", quote=True)
+
+        forwarded_host = self.headers.get("X-Forwarded-Host", "").split(",", 1)[0].strip()
+        host = forwarded_host or self.headers.get("Host", "127.0.0.1:3000")
+        forwarded_proto = self.headers.get("X-Forwarded-Proto", "").split(",", 1)[0].strip().lower()
+        scheme = forwarded_proto if forwarded_proto in ("http", "https") else ("https" if running_on_render() else "http")
+        page_url = html.escape(f"{scheme}://{host}/f/{compact_id}", quote=True)
+        body = f'''<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{title} | YC NICE LADY</title>
+  <meta name="description" content="{description}">
+  <meta property="og:type" content="product">
+  <meta property="og:site_name" content="YC NICE LADY">
+  <meta property="og:title" content="{title} | YC NICE LADY">
+  <meta property="og:description" content="{html.escape(price, quote=True)}">
+  <meta property="og:url" content="{page_url}">
+  <meta property="og:image" content="{image_url}">
+  <meta property="og:image:secure_url" content="{image_url}">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="{title} | YC NICE LADY">
+  <meta name="twitter:description" content="{html.escape(price, quote=True)}">
+  <meta name="twitter:image" content="{image_url}">
+</head>
+<body style="margin:0;min-height:100vh;display:grid;place-items:center;background:#fff7f9;font:16px Arial,sans-serif;color:#573b49">
+  <main style="max-width:760px;padding:16px;text-align:center">
+    <img src="{image_url}" alt="{title}" style="display:block;max-width:92vw;max-height:78vh;object-fit:contain;border-radius:16px;margin:auto">
+    <h1>{title}</h1><p>{html.escape(price)}</p>
+  </main>
+</body>
+</html>'''.encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "public, max-age=300")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.end_headers()
+        self.wfile.write(body)
+
     def body_json(self):
         length = min(int(self.headers.get("Content-Length", "0") or 0), 25_000_000)
         raw = self.rfile.read(length) if length else b"{}"
@@ -195,6 +272,8 @@ class SiteHandler(SimpleHTTPRequestHandler):
             return self.send_site_page("index.html")
         if path.rstrip("/") == "/admin":
             return self.send_site_page("admin.html")
+        if path.startswith("/f/"):
+            return self.send_product_share_page(path.removeprefix("/f/"))
         if path == "/api/session":
             return self.send_json(200, {"authenticated": self.is_admin()})
         if path in ("/rest/v1/products", "/api/products"):
