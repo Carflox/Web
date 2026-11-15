@@ -7,7 +7,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
-from app import load_local_env
+from app import load_local_env, running_on_render
 
 load_local_env()
 
@@ -30,6 +30,8 @@ def main():
     legacy_url = os.environ.get("LEGACY_SUPABASE_URL", "").rstrip("/")
     legacy_key = os.environ.get("LEGACY_SUPABASE_PUBLISHABLE_KEY", "")
     admin_url = os.environ.get("PYTHON_ADMIN_URL", "").rstrip("/")
+    if not admin_url and not running_on_render():
+        admin_url = f"http://127.0.0.1:{os.environ.get('PORT', '3000')}"
     email = os.environ.get("ADMIN_EMAIL", "")
     password = os.environ.get("ADMIN_PASSWORD", "")
     missing = [name for name, value in (
