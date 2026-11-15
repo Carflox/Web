@@ -81,7 +81,7 @@ Los números de WhatsApp, Instagram, precios y datos de pago son datos de ejempl
 
 El servicio `app.py` ejecuta el catálogo, el acceso privado, las estadísticas, los pedidos pendientes y las finanzas en Python con SQLite. Supabase queda para servir, subir y eliminar fotografías. La clave privada de Storage (`SUPABASE_SERVICE_ROLE_KEY`) solo se usa dentro de Python; nunca debe ponerse en archivos JavaScript ni subirse a GitHub.
 
-Para iniciar localmente, completa `.env` con `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `SESSION_SECRET`, `SUPABASE_SERVICE_ROLE_KEY` y la URL y bucket de Supabase. `.env.example` muestra los nombres. Usa `ABRIR_ADMIN.bat` para iniciar el servidor Python y abrir `http://localhost:3000/admin`; también puedes iniciar `python app.py` y abrir `http://localhost:10000/admin`.
+Para iniciar localmente, completa `.env` con `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `SESSION_SECRET`, `SUPABASE_SERVICE_ROLE_KEY` y la URL y bucket de Supabase. `.env.example` muestra los nombres. Ejecuta `python app.py`; el servidor abre el panel en `http://localhost:3000/admin`. Mantén esa terminal abierta mientras uses el panel.
 
 En Render, configura `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `SESSION_SECRET`, `SUPABASE_URL`, `SUPABASE_PRODUCTS_BUCKET` y `SUPABASE_SERVICE_ROLE_KEY` en **Environment**. Para conservar la base SQLite entre reinicios y despliegues, conecta un disco persistente y configura `STORE_DB_PATH=/var/data/store.sqlite3` con el punto de montaje `/var/data`. Sin un disco persistente, Render puede borrar los registros locales al reiniciar o volver a desplegar.
 

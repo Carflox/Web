@@ -442,7 +442,9 @@ loginForm.addEventListener('submit', async (event) => {
     await showAdminForCurrentSession();
   } catch (error) {
     clearSession();
-    setMessage(loginMessage, error.message === 'Invalid login credentials' ? 'Correo o contraseña incorrectos.' : `No se pudo iniciar sesión: ${error.message}`, true);
+    setMessage(loginMessage, error.message === 'Invalid login credentials'
+      ? 'El correo o la contraseña no coinciden con ADMIN_EMAIL y ADMIN_PASSWORD del servidor. En local revisa el archivo .env y reinicia Python; la contraseña de Supabase Auth no se usa.'
+      : `No se pudo iniciar sesión: ${error.message}`, true);
   }
 });
 

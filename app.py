@@ -7,6 +7,8 @@ import os
 import secrets
 import sqlite3
 import time
+import threading
+import webbrowser
 from contextlib import contextmanager
 from http.cookies import SimpleCookie
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -20,17 +22,29 @@ from uuid import uuid4
 ROOT = Path(__file__).resolve().parent
 
 
+def running_on_render():
+    return os.environ.get("RENDER", "").strip().lower() == "true"
+
+
 def load_local_env():
     """Load .env for local use. Render variables are provided by its dashboard."""
+    is_render = running_on_render()
     env_file = ROOT / ".env"
     if not env_file.exists():
         return
-    for raw in env_file.read_text(encoding="utf-8").splitlines():
+    for raw in env_file.read_text(encoding="utf-8-sig").splitlines():
         line = raw.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue
         key, value = line.split("=", 1)
-        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        # On a local run, .env is the source of truth for the Python login;
+        # stale Windows/Git Bash variables must not silently override it.
+        if not is_render:
+            os.environ[key] = value
+        else:
+            os.environ.setdefault(key, value)
 
 
 load_local_env()
@@ -132,6 +146,20 @@ class SiteHandler(SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def send_site_page(self, filename):
+        """Serve the main HTML pages from the app folder, independent of cwd."""
+        page = ROOT / filename
+        try:
+            body = page.read_bytes()
+        except OSError:
+            return self.send_error(404, f"No se encontró {filename} en {ROOT}")
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(body)
+
     def body_json(self):
         length = min(int(self.headers.get("Content-Length", "0") or 0), 25_000_000)
         raw = self.rfile.read(length) if length else b"{}"
@@ -163,9 +191,10 @@ class SiteHandler(SimpleHTTPRequestHandler):
                 or path.lower().endswith((".py", ".sqlite", ".sqlite3", ".db"))):
             self.send_error(404)
             return
+        if path in ("/", "/index.html"):
+            return self.send_site_page("index.html")
         if path.rstrip("/") == "/admin":
-            self.path = "/admin.html"
-            return super().do_GET()
+            return self.send_site_page("admin.html")
         if path == "/api/session":
             return self.send_json(200, {"authenticated": self.is_admin()})
         if path in ("/rest/v1/products", "/api/products"):
@@ -405,7 +434,19 @@ class SiteHandler(SimpleHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", "10000"))
-    server = ThreadingHTTPServer(("0.0.0.0", port), SiteHandler)
-    print(f"YC NICE LADY escuchando en el puerto {port}; SQLite: {DB_PATH}", flush=True)
+    required_pages = (ROOT / "index.html", ROOT / "admin.html")
+    missing_pages = [str(page) for page in required_pages if not page.is_file()]
+    if missing_pages:
+        raise SystemExit("Faltan páginas necesarias: " + ", ".join(missing_pages))
+    port = int(os.environ.get("PORT", "3000"))
+    is_render = running_on_render()
+    host = "0.0.0.0" if is_render else "127.0.0.1"
+    server = ThreadingHTTPServer((host, port), SiteHandler)
+    print(f"YC NICE LADY escuchando en el puerto {port}; páginas: {ROOT / 'index.html'} y {ROOT / 'admin.html'}; SQLite: {DB_PATH}", flush=True)
+    if not is_render:
+        def open_local_pages():
+            base_url = f"http://127.0.0.1:{port}"
+            webbrowser.open_new_tab(f"{base_url}/")
+            webbrowser.open_new_tab(f"{base_url}/admin")
+        threading.Timer(1, open_local_pages).start()
     server.serve_forever()
