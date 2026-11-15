@@ -129,7 +129,7 @@ function renderProducts() {
   productList.innerHTML = visibleProducts.map((product) => {
     const url = publicStorageUrl(product.image_path);
     const photo = url
-      ? `<button class="admin-product-image admin-product-image-button" type="button" data-preview-product-image="${product.id}" aria-label="Ampliar foto de ${escapeHtml(product.name)}" title="Haz clic para ampliar la foto"><img src="${url}" alt=""><span aria-hidden="true">Ampliar</span></button>`
+      ? `<button class="admin-product-image admin-product-image-button" type="button" data-preview-product-image="${product.id}" aria-label="Ampliar foto de ${escapeHtml(product.name)}" title="Haz clic para ampliar la foto"><img src="${url}" alt="" loading="lazy" decoding="async" fetchpriority="low"><span aria-hidden="true">Ampliar</span></button>`
       : '<div class="admin-product-image">♡</div>';
     return `
       <article class="admin-product" draggable="${!adminProductSearch.value.trim()}" data-product-id="${product.id}">
@@ -194,6 +194,90 @@ function fileExtension(file) {
   return byType[file.type] || 'jpg';
 }
 
+async function optimizeProductImage(file) {
+  if (!('createImageBitmap' in window) || !('toBlob' in document.createElement('canvas'))) return file;
+  const bitmap = await createImageBitmap(file);
+  try {
+    const scale = Math.min(1, 1280 / Math.max(bitmap.width, bitmap.height));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+    canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+    canvas.getContext('2d').drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    const blob = await new Promise((resolve, reject) => canvas.toBlob(result => result ? resolve(result) : reject(new Error('No se pudo optimizar la foto.')), 'image/webp', 0.8));
+    if (blob.type !== 'image/webp') return file;
+    return new File([blob], `${file.name.replace(/\.[^.]+$/, '')}.webp`, { type: 'image/webp', lastModified: file.lastModified });
+  } finally { bitmap.close?.(); }
+}
+
+const productImageHashCacheKey = 'yc-nice-lady-product-image-hashes-v1';
+function readProductImageHashCache() {
+  try { return JSON.parse(localStorage.getItem(productImageHashCacheKey) || '{}'); } catch { return {}; }
+}
+function saveProductImageHashCache(cache) {
+  try { localStorage.setItem(productImageHashCacheKey, JSON.stringify(cache)); } catch { /* El cotejo sigue funcionando sin caché. */ }
+}
+async function perceptualImageHash(blob) {
+  const bitmap = await createImageBitmap(blob);
+  try {
+    const canvas = document.createElement('canvas'); canvas.width = 9; canvas.height = 8;
+    const context = canvas.getContext('2d', { willReadFrequently: true });
+    context.drawImage(bitmap, 0, 0, 9, 8);
+    const pixels = context.getImageData(0, 0, 9, 8).data;
+    const gray = [];
+    for (let i = 0; i < pixels.length; i += 4) gray.push(Math.round(pixels[i] * 0.299 + pixels[i + 1] * 0.587 + pixels[i + 2] * 0.114));
+    let bits = '';
+    for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) bits += gray[y * 9 + x] > gray[y * 9 + x + 1] ? '1' : '0';
+    return BigInt(`0b${bits}`).toString(16).padStart(16, '0');
+  } finally { bitmap.close?.(); }
+}
+function imageHashDistance(first, second) {
+  let bits = BigInt(`0x${first}`) ^ BigInt(`0x${second}`), count = 0;
+  while (bits) { count++; bits &= bits - 1n; }
+  return count;
+}
+function catalogNameSimilarity(first, second) {
+  const a = normalizeSearchText(first).replace(/[^a-z0-9]+/g, '');
+  const b = normalizeSearchText(second).replace(/[^a-z0-9]+/g, '');
+  if (!a || !b) return 0;
+  const previous = Array.from({ length: b.length + 1 }, (_, index) => index);
+  for (let i = 1; i <= a.length; i++) {
+    let diagonal = previous[0]; previous[0] = i;
+    for (let j = 1; j <= b.length; j++) {
+      const above = previous[j];
+      previous[j] = Math.min(previous[j] + 1, previous[j - 1] + 1, diagonal + (a[i - 1] === b[j - 1] ? 0 : 1));
+      diagonal = above;
+    }
+  }
+  return 1 - previous[b.length] / Math.max(a.length, b.length);
+}
+async function loadCatalogImageHashes(onProgress = () => {}) {
+  const candidates = products.filter(product => product.is_active !== false && product.image_path);
+  const cache = readProductImageHashCache();
+  let cursor = 0, checked = 0;
+  const hashes = new Map();
+  const workers = Array.from({ length: Math.min(6, candidates.length) }, async () => {
+    while (cursor < candidates.length) {
+      const product = candidates[cursor++];
+      const cacheKey = `${product.id}:${product.image_path}`;
+      try {
+        let hash = cache[cacheKey];
+        if (!hash) {
+          const response = await fetch(publicStorageUrl(product.image_path), { mode: 'cors', cache: 'force-cache' });
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          hash = await perceptualImageHash(await response.blob());
+          cache[cacheKey] = hash;
+        }
+        hashes.set(String(product.id), hash);
+      } catch { /* Una foto inaccesible se omite; se sigue analizando el resto. */ }
+      checked++;
+      onProgress(checked, candidates.length, hashes.size);
+    }
+  });
+  await Promise.all(workers);
+  saveProductImageHashCache(cache);
+  return { hashes, checked, total: candidates.length };
+}
+
 function newProductId() {
   if (window.crypto?.randomUUID) return window.crypto.randomUUID();
   const bytes = window.crypto.getRandomValues(new Uint8Array(16));
@@ -235,12 +319,18 @@ async function saveProduct(event) {
   const costPrice = Number(form.get('cost_price'));
   const stock = Number(form.get('stock'));
 
+  const comparableName = normalizeSearchText(name).replace(/[^a-z0-9]+/g, '');
+  const duplicateProduct = products.find((product) => String(product.id) !== String(currentId || '') && normalizeSearchText(product.name).replace(/[^a-z0-9]+/g, '') === comparableName);
+  if (duplicateProduct) {
+    setMessage(productMessage, `No se guardó: ya existe “${duplicateProduct.name}” en el catálogo público. Revisa el producto existente.`, true);
+    return;
+  }
   if (!Number.isFinite(price) || price < 0 || !Number.isFinite(costPrice) || costPrice < 0 || !Number.isInteger(stock) || stock < 0) {
     setMessage(productMessage, 'Revisa el precio y el stock.', true);
     return;
   }
-  if (file instanceof File && file.size > 5 * 1024 * 1024) {
-    setMessage(productMessage, 'La foto debe pesar menos de 5 MB.', true);
+  if (file instanceof File && file.size > 20 * 1024 * 1024) {
+    setMessage(productMessage, 'La foto original debe pesar menos de 20 MB para poder optimizarla.', true);
     return;
   }
   if (file instanceof File && file.size && !['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
@@ -256,8 +346,10 @@ async function saveProduct(event) {
 
   try {
     if (file instanceof File && file.size) {
-      uploadedImagePath = `products/${id}/${Date.now()}.${fileExtension(file)}`;
-      await uploadImage(uploadedImagePath, file);
+      const optimizedFile = await optimizeProductImage(file);
+      if (optimizedFile.size > 5 * 1024 * 1024) throw new Error('La foto sigue superando 5 MB después de optimizarla. Elige una imagen más pequeña.');
+      uploadedImagePath = `products/${id}/${Date.now()}.${fileExtension(optimizedFile)}`;
+      await uploadImage(uploadedImagePath, optimizedFile);
       imagePath = uploadedImagePath;
     }
 
@@ -623,4 +715,200 @@ paintFinance = function(entries) {
   const expenses=entries.filter(entry=>entry.entry_type==='expense').reduce((sum,entry)=>sum+Number(entry.amount),0);
   const productCosts=entries.filter(entry=>entry.entry_type==='sale').reduce((sum,entry)=>sum+Number(entry.cost_amount||0),0);
   renderInteractiveChart(document.querySelector('#financeShareChart'),[{label:'Ventas',value:sales,color:'#54a17c'},{label:'Gastos operativos',value:expenses,color:'#d76b83'},{label:'Costo de productos vendidos',value:productCosts,color:'#d89a55'}],'pie','vertical');
+};
+
+// Fechas históricas, precios unitarios guardados como fotografía del momento y conciliación por producto.
+function setFinanceDateDefaults() {
+  const now = new Date();
+  const local = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+  document.querySelectorAll('#financeSaleForm [name="created_at"], #financeExpenseForm [name="created_at"]').forEach(input => { if (!input.value) input.value = local; });
+}
+function recalculateHistoricalSale() {
+  const form = document.querySelector('#financeSaleForm');
+  const quantity = Math.max(1, Number(form.elements.quantity.value) || 1);
+  const unitPrice = Number(form.elements.unit_price.value) || 0;
+  form.elements.amount.value = (unitPrice * quantity).toFixed(2);
+  const product = products.find(item => String(item.id) === financeSaleProduct.value);
+  if (product) form.elements.description.value = `${product.name} × ${quantity}`;
+}
+financeSaleProduct.addEventListener('change', () => {
+  const product = products.find(item => String(item.id) === financeSaleProduct.value);
+  if (!product) return;
+  const form = document.querySelector('#financeSaleForm');
+  form.elements.unit_price.value = Number(product.price || 0).toFixed(2);
+  form.elements.unit_cost.value = Number(product.cost_price || 0).toFixed(2);
+  recalculateHistoricalSale();
+});
+document.querySelector('#financeSaleForm').elements.quantity.addEventListener('input', recalculateHistoricalSale);
+document.querySelector('#financeSaleForm').elements.unit_price.addEventListener('input', recalculateHistoricalSale);
+document.querySelector('#financeSaleForm').addEventListener('reset', () => setTimeout(setFinanceDateDefaults));
+document.querySelector('#financeExpenseForm').addEventListener('reset', () => setTimeout(setFinanceDateDefaults));
+document.querySelector('#openFinance').addEventListener('click', setFinanceDateDefaults);
+
+const submitFinanceWithHistoricalPrices = submitFinance;
+submitFinance = async function(form, entryType) {
+  const data = new FormData(form);
+  const description = String(data.get('description') || '').trim();
+  const amount = Number(data.get('amount'));
+  const createdAt = new Date(String(data.get('created_at') || ''));
+  if (!description || !Number.isFinite(amount) || amount <= 0 || Number.isNaN(createdAt.getTime())) {
+    financeStatus.textContent = 'Completa una fecha válida, descripción y monto mayor que cero.'; return;
+  }
+  let payload;
+  if (entryType === 'sale') {
+    const productId = String(data.get('product_id') || '');
+    const product = products.find(item => String(item.id) === productId);
+    const quantity = Number(data.get('quantity'));
+    const unitPrice = Number(data.get('unit_price'));
+    const unitCost = Number(data.get('unit_cost'));
+    if (!Number.isInteger(quantity) || quantity < 1 || !Number.isFinite(unitPrice) || unitPrice <= 0 || !Number.isFinite(unitCost) || unitCost < 0) {
+      financeStatus.textContent = 'Revisa cantidad y precios unitarios de venta y costo.'; return;
+    }
+    payload = { entry_type: 'sale', category: 'sale', description, amount, product_id: product?.id || null, quantity, cost_amount: unitCost * quantity, created_at: createdAt.toISOString() };
+  } else {
+    payload = { entry_type: 'expense', category: String(data.get('category')), description, amount, product_id: null, quantity: 1, cost_amount: 0, created_at: createdAt.toISOString() };
+  }
+  const button = form.querySelector('button[type="submit"]'); button.disabled = true;
+  try {
+    await request('/rest/v1/store_finance_entries', { method: 'POST', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' }, body: JSON.stringify(payload) });
+    form.reset(); await loadFinanceEntries();
+    financeStatus.textContent = entryType === 'sale' ? 'Venta histórica registrada con sus precios y costo de esa fecha.' : 'Gasto registrado con su fecha.';
+  } catch (error) {
+    financeStatus.textContent = /created_at|cost_amount|product_id|quantity|schema cache|column/i.test(error.message) ? 'Faltan columnas de Finanzas en Supabase. Ejecuta supabase/add-product-cost-and-finance.sql y confirma que store_finance_entries tenga created_at.' : `No se pudo guardar: ${error.message}`;
+  } finally { button.disabled = false; }
+};
+
+paintFinance = function(entries) {
+  const salesEntries = entries.filter(entry => entry.entry_type === 'sale');
+  const expenseEntries = entries.filter(entry => entry.entry_type === 'expense');
+  const sales = salesEntries.reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
+  const inventoryPurchases = expenseEntries.filter(entry => entry.category === 'productos').reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
+  const operatingExpenses = expenseEntries.filter(entry => entry.category !== 'productos').reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
+  const cogs = salesEntries.reduce((sum, entry) => sum + Number(entry.cost_amount || 0), 0);
+  financeTotals.innerHTML = `<article><span>Ventas confirmadas</span><strong>${financeMoney(sales)}</strong></article><article><span>Gastos operativos</span><strong>${financeMoney(operatingExpenses)}</strong></article><article><span>Compras de inventario (caja)</span><strong>${financeMoney(inventoryPurchases)}</strong></article><article><span>Costo de productos vendidos</span><strong>${financeMoney(cogs)}</strong></article><article><span>Ganancia estimada</span><strong>${financeMoney(sales - operatingExpenses - cogs)}</strong></article>`;
+  const days = new Map();
+  for (const entry of entries) {
+    const key = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Lima', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(entry.created_at));
+    const day = days.get(key) || { sales: 0, expenses: 0 };
+    if (entry.entry_type === 'sale') day.sales += Number(entry.amount || 0); else day.expenses += Number(entry.amount || 0);
+    days.set(key, day);
+  }
+  const trend = [...days].sort(([a], [b]) => a.localeCompare(b)).map(([key, value]) => ({ label: key, shortLabel: key.slice(5), value: value.sales }));
+  renderInteractiveChart(document.querySelector('#financeTrendChart'), trend, 'line', 'vertical');
+  renderInteractiveChart(document.querySelector('#financeShareChart'), [{ label: 'Ventas', value: sales, color: '#54a17c' }, { label: 'Gastos operativos', value: operatingExpenses, color: '#d76b83' }, { label: 'Costo vendido', value: cogs, color: '#d89a55' }], 'pie', 'vertical');
+  const categories = new Map();
+  expenseEntries.forEach(entry => categories.set(entry.category, (categories.get(entry.category) || 0) + Number(entry.amount || 0)));
+  if (cogs) categories.set('costo_productos', cogs);
+  renderInteractiveChart(document.querySelector('#expenseBreakdown'), [...categories].sort((a, b) => b[1] - a[1]).map(([category, value]) => ({ label: category === 'costo_productos' ? 'Costo de productos vendidos' : financeCategoryLabels[category] || category, value })), 'bar', 'horizontal');
+  financeLedger.innerHTML = entries.map(entry => {
+    const isSale = entry.entry_type === 'sale';
+    const quantity = Number(entry.quantity || 1);
+    const product = isSale && entry.product_id ? products.find(item => String(item.id) === String(entry.product_id)) : null;
+    const unitSale = isSale ? Number(entry.amount || 0) / quantity : null;
+    const unitCost = isSale ? Number(entry.cost_amount || 0) / quantity : null;
+    return `<tr><td>${financeDate(entry.created_at)}</td><td>${isSale ? 'Venta' : 'Gasto'}</td><td>${escapeHtml(entry.description)}</td><td>${escapeHtml(product?.name || (isSale ? 'Venta general' : financeCategoryLabels[entry.category] || entry.category))}</td><td>${isSale ? `${quantity} u.` : '—'}</td><td>${isSale ? financeMoney(unitSale) : '—'}</td><td>${isSale ? financeMoney(unitCost) : '—'}</td><td>${financeMoney(entry.amount)}</td><td>${isSale ? financeMoney(entry.cost_amount) : '—'}</td><td><button class="finance-delete" type="button" data-finance-delete="${escapeHtml(entry.id)}" aria-label="Eliminar movimiento">Eliminar</button></td></tr>`;
+  }).join('') || '<tr><td colspan="10">Aún no hay movimientos financieros.</td></tr>';
+};
+
+async function loadFinanceProductPerformance() {
+  const body = document.querySelector('#financeProductPerformance');
+  const status = document.querySelector('#financeProductPerformanceStatus');
+  if (!body || !status) return;
+  try {
+    let events = [], offset = 0, page;
+    do {
+      page = await request(`/rest/v1/store_analytics_events?select=event_type,product_id,quantity&order=created_at.desc&limit=1000&offset=${offset}`);
+      events.push(...(page || [])); offset += 1000;
+    } while (page && page.length === 1000);
+    const activity = new Map();
+    for (const event of events) {
+      if (!event.product_id) continue;
+      const row = activity.get(String(event.product_id)) || { cart: 0, whatsapp: 0 };
+      if (event.event_type === 'add_to_cart') row.cart += Number(event.quantity || 1);
+      if (event.event_type === 'whatsapp_click') row.whatsapp++;
+      activity.set(String(event.product_id), row);
+    }
+    const sold = new Map();
+    for (const entry of latestFinanceEntries) if (entry.entry_type === 'sale' && entry.product_id) {
+      const row = sold.get(String(entry.product_id)) || { quantity: 0, revenue: 0 };
+      row.quantity += Number(entry.quantity || 1); row.revenue += Number(entry.amount || 0); sold.set(String(entry.product_id), row);
+    }
+    body.innerHTML = products.map(product => {
+      const engagement = activity.get(String(product.id)) || { cart: 0, whatsapp: 0 };
+      const sales = sold.get(String(product.id)) || { quantity: 0, revenue: 0 };
+      const src = product.image_path ? `${SUPABASE_URL}/storage/v1/object/public/${PRODUCTS_BUCKET}/${product.image_path.split('/').map(encodeURIComponent).join('/')}` : '';
+      return `<tr><td>${src ? `<a href="${escapeHtml(src)}" target="_blank" rel="noopener"><img src="${escapeHtml(src)}" alt="${escapeHtml(product.name)}" loading="lazy" width="44" height="44" style="object-fit:cover;border-radius:8px;vertical-align:middle;margin-right:8px"></a>` : ''}${escapeHtml(product.name)}</td><td>${engagement.cart}</td><td>${engagement.whatsapp}</td><td>${sales.quantity}</td><td>${financeMoney(sales.revenue)}</td></tr>`;
+    }).join('');
+    status.textContent = 'Actividad del catálogo y ventas confirmadas por producto. Agregar y WhatsApp miden interés, no ventas.';
+    await renderSimilarCatalogProducts(activity, sold);
+  } catch (error) {
+    status.textContent = /store_analytics_events|404|relation/i.test(error.message) ? 'Ejecuta supabase/add-store-analytics.sql para conectar la actividad del catálogo.' : `No se pudieron unir las estadísticas: ${error.message}`;
+    const soldFallback = new Map();
+    for (const entry of latestFinanceEntries) if (entry.entry_type === 'sale' && entry.product_id) {
+      const row = soldFallback.get(String(entry.product_id)) || { quantity: 0, revenue: 0 };
+      row.quantity += Number(entry.quantity || 1); row.revenue += Number(entry.amount || 0); soldFallback.set(String(entry.product_id), row);
+    }
+    await renderSimilarCatalogProducts(new Map(), soldFallback);
+  }
+}
+async function renderSimilarCatalogProducts(activity, sold) {
+  const body = document.querySelector('#similarProductsLedger');
+  const status = document.querySelector('#similarProductsStatus');
+  if (!body || !status) return;
+  const candidates = products.filter(product => product.is_active !== false);
+  let imageHashes = new Map(), checked = 0, total = 0;
+  status.textContent = 'Comparando nombres e imágenes del catálogo público…';
+  try {
+    const result = await loadCatalogImageHashes((done, count) => { checked = done; total = count; status.textContent = `Comparando fotos del catálogo (${done}/${count})…`; });
+    imageHashes = result.hashes;
+  } catch { /* El análisis de nombres sigue disponible aunque falle la carga de imágenes. */ }
+  const pairs = [];
+  for (let i = 0; i < candidates.length; i++) for (let j = i + 1; j < candidates.length; j++) {
+    const first = candidates[i], second = candidates[j];
+    const nameScore = catalogNameSimilarity(first.name, second.name);
+    const firstHash = imageHashes.get(String(first.id)), secondHash = imageHashes.get(String(second.id));
+    const photoDistance = firstHash && secondHash ? imageHashDistance(firstHash, secondHash) : null;
+    const similarName = nameScore >= 0.78;
+    const similarPhoto = photoDistance !== null && photoDistance <= 5;
+    if (similarName || similarPhoto) pairs.push({ first, second, nameScore, photoDistance, similarName, similarPhoto });
+  }
+  const pairActivityScore = product => {
+    const engagement = activity.get(String(product.id)) || { cart: 0, whatsapp: 0 };
+    const sales = sold.get(String(product.id)) || { quantity: 0, revenue: 0 };
+    return sales.quantity * 1000000 + sales.revenue * 1000 + engagement.whatsapp * 10 + engagement.cart;
+  };
+  pairs.sort((a, b) => pairActivityScore(b.first) + pairActivityScore(b.second) - pairActivityScore(a.first) - pairActivityScore(a.second));
+  const metrics = (product, type) => {
+    const interactions = activity.get(String(product.id)) || { cart: 0, whatsapp: 0 };
+    const sales = sold.get(String(product.id)) || { quantity: 0, revenue: 0 };
+    return type === 'cart' ? interactions.cart : type === 'whatsapp' ? interactions.whatsapp : type === 'quantity' ? sales.quantity : financeMoney(sales.revenue);
+  };
+  const productCell = product => {
+    const src = product.image_path ? publicStorageUrl(product.image_path) : '';
+    return `<div class="similar-product-cell">${src ? `<a href="${escapeHtml(src)}" target="_blank" rel="noopener"><img src="${escapeHtml(src)}" alt="${escapeHtml(product.name)}" loading="lazy" width="46" height="46"></a>` : ''}<strong>${escapeHtml(product.name)}</strong></div>`;
+  };
+  body.innerHTML = pairs.map(pair => {
+    const labels = [];
+    if (pair.similarName) labels.push(`Nombre ${Math.round(pair.nameScore * 100)}%`);
+    if (pair.similarPhoto) labels.push(`Foto similar (${pair.photoDistance}/64)`);
+    const first = pair.first, second = pair.second;
+    return `<tr><td><small>A</small>${productCell(first)}<small>B</small>${productCell(second)}</td><td>${labels.join('<br>')}</td><td>A: ${metrics(first, 'cart')} · B: ${metrics(second, 'cart')}</td><td>A: ${metrics(first, 'whatsapp')} · B: ${metrics(second, 'whatsapp')}</td><td>A: ${metrics(first, 'quantity')} · B: ${metrics(second, 'quantity')}</td><td>A: ${metrics(first, 'revenue')} · B: ${metrics(second, 'revenue')}</td></tr>`;
+  }).join('') || '<tr><td colspan="6">No encontramos productos activos con nombres o fotos similares.</td></tr>';
+  status.textContent = pairs.length
+    ? `${pairs.length} pares parecidos detectados · métricas en orden de producto A / producto B. Revisadas ${checked} de ${total} fotos.`
+    : `No encontramos pares similares entre los productos activos. Revisadas ${checked} de ${total} fotos.`;
+}
+let latestFinanceEntries = [];
+const loadFinanceEntriesWithSnapshot = loadFinanceEntries;
+loadFinanceEntries = async function() {
+  await loadFinanceEntriesWithSnapshot();
+  try {
+    let all = [], offset = 0, page;
+    do {
+      page = await request(`/rest/v1/store_finance_entries?select=id,entry_type,product_id,quantity,amount,cost_amount,created_at&order=created_at.desc&limit=1000&offset=${offset}`);
+      all.push(...(page || [])); offset += 1000;
+    } while (page && page.length === 1000);
+    latestFinanceEntries = all;
+    await loadFinanceProductPerformance();
+  } catch { /* El panel de movimientos ya informa el error de carga. */ }
 };

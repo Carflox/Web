@@ -12,11 +12,14 @@ const checkoutButton = document.querySelector('#checkoutButton');
 const preview = document.querySelector('#productPreview');
 const priceMax = document.querySelector('#priceMax');
 const productSearch = document.querySelector('#productSearch');
+const networkNotice = document.querySelector('#networkNotice');
 let activeCategory = 'all';
 const cartStorageKey = 'yc-nice-lady-cart';
+const productsCacheKey = 'yc-nice-lady-public-products-v1';
 
 let products = [];
 let cart = loadCart();
+let catalogIsFresh = false;
 
 function loadCart() {
   try {
@@ -179,7 +182,10 @@ function renderCart() {
   const total = entries.reduce((sum, { product, quantity }) => sum + Number(product.price) * quantity, 0);
   cartCount.textContent = itemCount;
   cartTotal.textContent = formatMoney(total);
-  checkoutButton.disabled = entries.length === 0;
+  checkoutButton.disabled = entries.length === 0 || !navigator.onLine || !catalogIsFresh;
+  if (!navigator.onLine) cartMessage.textContent = 'Sin internet. Tu carrito está guardado; podrás pedir por WhatsApp cuando vuelva la conexión.';
+  else if (!catalogIsFresh && entries.length) cartMessage.textContent = 'Conectando para confirmar el catálogo y el stock antes del pedido…';
+  else if (catalogIsFresh && /Sin internet|Conectando para confirmar/.test(cartMessage.textContent)) cartMessage.textContent = '';
 
   if (!entries.length) {
     cartItemsEl.innerHTML = '<p class="cart-empty">Aún no agregaste productos a tu carrito.</p>';
@@ -217,6 +223,19 @@ function addToCart(id) {
   return true;
 }
 
+function loadCachedCatalog() {
+  try {
+    const cachedProducts = JSON.parse(localStorage.getItem(productsCacheKey) || 'null');
+    if (!Array.isArray(cachedProducts) || !cachedProducts.length) return false;
+    products = cachedProducts;
+    catalogIsFresh = false;
+    status.textContent = `Sin conexión · ${products.length} productos guardados (stock por confirmar)`;
+    if (networkNotice) { networkNotice.hidden = false; networkNotice.textContent = 'Estás sin internet. Puedes explorar el catálogo guardado y preparar el carrito; WhatsApp se habilitará al reconectarte.'; }
+    updateCart();
+    return true;
+  } catch { return false; }
+}
+
 async function loadProducts({ loading = true } = {}) {
   if (loading) {
     status.textContent = 'Cargando catálogo…';
@@ -228,6 +247,11 @@ async function loadProducts({ loading = true } = {}) {
       'No se inició la conexión del catálogo.',
       'Recarga la página. Si la abriste con doble clic, publícala primero en Netlify para que la tienda se conecte correctamente.'
     );
+    return false;
+  }
+  if (!navigator.onLine) {
+    if (loadCachedCatalog()) return false;
+    showCatalogueProblem('No hay conexión a internet.', 'Abre la tienda con internet una vez en este dispositivo para guardar el catálogo y poder consultarlo después sin conexión.');
     return false;
   }
 
@@ -253,14 +277,17 @@ async function loadProducts({ loading = true } = {}) {
     const data = await Promise.race([query, timeout]);
 
     products = data || [];
+    catalogIsFresh = true;
+    try { localStorage.setItem(productsCacheKey, JSON.stringify(products)); } catch { /* El catálogo sigue disponible en memoria si el almacenamiento está lleno. */ }
     status.textContent = products.length ? `${products.length} producto${products.length === 1 ? '' : 's'} disponible${products.length === 1 ? '' : 's'}` : 'Catálogo actualizado';
     updateCart();
     return true;
   } catch (error) {
     console.error('No se pudo cargar el catálogo:', error);
+    if (loadCachedCatalog()) return false;
     showCatalogueProblem(
       'No pudimos conectar con el catálogo.',
-      'Revisa que tengas internet y vuelve a intentarlo. Si continúa igual, abre la tienda desde su enlace de Netlify, no como archivo descargado.'
+      'Para usar la tienda sin conexión, primero debes abrirla una vez con internet en este dispositivo. Luego vuelve a intentarlo.'
     );
     return false;
   }
@@ -288,8 +315,14 @@ async function reserveCartStock(entries) {
 }
 
 async function checkout() {
-  if (!cartEntries().length) return;
-  trackStoreEvent('whatsapp_click', { quantity: cartEntries().reduce((sum, entry) => sum + entry.quantity, 0) });
+  const checkoutEntries = cartEntries();
+  if (!checkoutEntries.length) return;
+  if (!navigator.onLine || !catalogIsFresh) {
+    cartMessage.textContent = 'Sin conexión al catálogo. Tu carrito se conserva; al volver internet actualizaremos el stock y podrás pedir por WhatsApp.';
+    renderCart();
+    return;
+  }
+  checkoutEntries.forEach(({ product, quantity }) => trackStoreEvent('whatsapp_click', { product, quantity }));
   const phone = WHATSAPP_NUMBER.replace(/\D/g, '');
   if (!phone) {
     cartMessage.textContent = 'Aún falta configurar el WhatsApp del emprendimiento.';
@@ -298,7 +331,7 @@ async function checkout() {
 
   const orderWindow = window.open('', '_blank');
   const catalogueUpdated = await loadProducts({ loading: false });
-  if (!catalogueUpdated) {
+  if (!catalogueUpdated || !navigator.onLine || !catalogIsFresh) {
     cartMessage.textContent = 'No pudimos confirmar el stock en este momento. Inténtalo nuevamente.';
     orderWindow?.close();
     return;
@@ -417,4 +450,28 @@ document.querySelector('#continueShopping').addEventListener('click', () => dial
 dialog.addEventListener('click', (event) => { if (event.target === dialog) dialog.close(); });
 checkoutButton.addEventListener('click', checkout);
 
-loadProducts();
+function updateConnectionNotice() {
+  if (!navigator.onLine) {
+    if (networkNotice) { networkNotice.hidden = false; networkNotice.textContent = 'Estás sin internet. Puedes explorar el catálogo guardado y preparar el carrito; WhatsApp se habilitará al reconectarte.'; }
+    renderCart();
+    return;
+  }
+  if (networkNotice) { networkNotice.hidden = false; networkNotice.textContent = 'Conexión recuperada. Actualizando catálogo y stock…'; }
+  loadProducts({ loading: false }).then((loaded) => {
+    if (networkNotice) {
+      networkNotice.hidden = false;
+      networkNotice.textContent = loaded ? 'Catálogo actualizado. Ya puedes continuar tu pedido por WhatsApp.' : 'No pudimos conectar con el catálogo todavía. Conservamos tu carrito; intenta de nuevo en un momento.';
+    }
+    renderCart();
+  });
+}
+window.addEventListener('offline', updateConnectionNotice);
+window.addEventListener('online', updateConnectionNotice);
+
+function startPublicStore() { loadProducts(); }
+if ('serviceWorker' in navigator && window.location.protocol === 'https:') {
+  navigator.serviceWorker.register('/service-worker.js')
+    .then(() => navigator.serviceWorker.ready)
+    .then(startPublicStore)
+    .catch((error) => { console.warn('No se pudo habilitar el modo sin conexión:', error); startPublicStore(); });
+} else startPublicStore();

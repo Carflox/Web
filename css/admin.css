@@ -13,3 +13,6 @@
 .product-pricing{grid-template-columns:repeat(3,minmax(0,1fr))}.product-pricing label small{color:var(--muted);font-size:.7rem;font-weight:400}.finance-form .form-columns{grid-template-columns:minmax(0,.6fr) minmax(0,1.4fr)}.finance-content .analytics-cards{grid-template-columns:repeat(4,minmax(0,1fr))}@media(max-width:900px){.product-pricing{grid-template-columns:repeat(2,minmax(0,1fr))}.finance-content .analytics-cards{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:520px){.product-pricing,.finance-form .form-columns{grid-template-columns:1fr}.finance-content .analytics-cards{grid-template-columns:1fr}}
 
 .admin-brand img{background:transparent;box-shadow:0 5px 15px rgba(143,83,105,.19)}.admin-brand img{clip-path:circle(47% at 50% 50%)}
+
+@media(min-width:1101px){.finance-content .analytics-cards{grid-template-columns:repeat(5,minmax(0,1fr))}}
+.similar-product-cell{display:flex;align-items:center;gap:8px;margin:5px 0}.similar-product-cell img{display:block;width:46px;height:46px;object-fit:cover;border-radius:8px}.similar-product-cell strong{max-width:210px;overflow-wrap:anywhere}

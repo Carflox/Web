@@ -330,3 +330,4 @@ footer{padding:25px 6%;background:#3e2932;color:#e9d8de;text-align:center;font-s
 .brand img{background:transparent;box-shadow:0 5px 15px rgba(143,83,105,.19)}
 .logo-showcase{padding:0;background:transparent;box-shadow:none}
 .main-logo{object-fit:contain;box-shadow:none;filter:drop-shadow(0 10px 22px rgba(143,83,105,.2))}.brand img,.main-logo{clip-path:circle(47% at 50% 50%)}
+.network-notice{margin:0 0 14px;padding:11px 15px;border:1px solid #e7cbd4;border-radius:12px;color:#704756;background:#fff5f7;font-size:.9rem}.network-notice[hidden]{display:none}
