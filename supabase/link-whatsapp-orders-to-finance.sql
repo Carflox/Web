@@ -3,6 +3,9 @@
 alter table public.store_finance_entries
   add column if not exists analytics_event_id bigint;
 
+alter table public.store_finance_entries
+  add column if not exists supplier text;
+
 do $$
 begin
   alter table public.store_finance_entries

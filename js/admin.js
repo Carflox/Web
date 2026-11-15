@@ -574,7 +574,7 @@ const financeStatus = document.querySelector('#financeStatus');
 const financeTotals = document.querySelector('#financeTotals');
 const financeSalesLedger = document.querySelector('#financeSalesLedger');
 const financeExpenseLedger = document.querySelector('#financeExpenseLedger');
-const expenseBreakdown = document.querySelector('#expenseBreakdown');
+const financeSupplierChart = document.querySelector('#financeSupplierChart');
 const financePendingWhatsapp = document.querySelector('#financePendingWhatsapp');
 const financePendingStatus = document.querySelector('#financePendingStatus');
 const financeCategoryLabels = { sale: 'Venta', delivery: 'Delivery pagado', gasolina: 'Gasolina', material_moto: 'Materiales de moto', productos: 'Compra de inventario', empaque: 'Empaques', otros: 'Otros gastos' };
@@ -596,7 +596,7 @@ function setFinanceDateDefaults() {
 }
 function refreshFinanceSaleProducts() {
   const selected = financeSaleProduct.value;
-  financeSaleProduct.innerHTML = '<option value="">Venta general</option>' + products.map(product => `<option value="${escapeHtml(product.id)}">${escapeHtml(product.name)} · costo ${financeMoney(product.cost_price)}</option>`).join('');
+  financeSaleProduct.innerHTML = '<option value="">Venta general</option>' + products.map(product => `<option value="${escapeHtml(product.id)}">${escapeHtml(product.name)} · ${financeMoney(product.price)}</option>`).join('');
   if (products.some(product => String(product.id) === selected)) financeSaleProduct.value = selected;
 }
 function syncFinanceSaleFields({ useCurrentPrices = false } = {}) {
@@ -605,7 +605,6 @@ function syncFinanceSaleFields({ useCurrentPrices = false } = {}) {
   const quantity = Math.max(1, Number(form.elements.quantity.value) || 1);
   if (product && useCurrentPrices) {
     form.elements.unit_price.value = Number(product.price || 0).toFixed(2);
-    form.elements.unit_cost.value = Number(product.cost_price || 0).toFixed(2);
   }
   if (product) form.elements.description.value = `${product.name} × ${quantity}`;
   form.elements.amount.value = (Math.max(0, Number(form.elements.unit_price.value) || 0) * quantity).toFixed(2);
@@ -614,12 +613,11 @@ function paintFinance(entries) {
   const salesEntries = entries.filter(entry => entry.entry_type === 'sale');
   const expenseEntries = entries.filter(entry => entry.entry_type === 'expense');
   const sales = salesEntries.reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
-  const cogs = salesEntries.reduce((sum, entry) => sum + Number(entry.cost_amount || 0), 0);
   const inventoryPurchases = expenseEntries.filter(entry => entry.category === 'productos').reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
   const operatingExpenses = expenseEntries.filter(entry => entry.category !== 'productos').reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
-  const profit = sales - cogs - operatingExpenses;
-  const cashFlow = sales - inventoryPurchases - operatingExpenses;
-  financeTotals.innerHTML = `<article><span>Ventas confirmadas</span><strong>${financeMoney(sales)}</strong></article><article><span>Costo de productos vendidos</span><strong>${financeMoney(cogs)}</strong></article><article><span>Gastos operativos</span><strong>${financeMoney(operatingExpenses)}</strong></article><article><span>Compras de inventario pagadas</span><strong>${financeMoney(inventoryPurchases)}</strong></article><article><span>Ganancia estimada</span><strong>${financeMoney(profit)}</strong></article><article><span>Flujo de caja registrado</span><strong>${financeMoney(cashFlow)}</strong></article>`;
+  const totalCosts = inventoryPurchases + operatingExpenses;
+  const profit = sales - totalCosts;
+  financeTotals.innerHTML = `<article><span>Ventas confirmadas</span><strong>${financeMoney(sales)}</strong></article><article><span>Compras a proveedores</span><strong>${financeMoney(inventoryPurchases)}</strong></article><article><span>Otros gastos</span><strong>${financeMoney(operatingExpenses)}</strong></article><article><span>Total costos y gastos</span><strong>${financeMoney(totalCosts)}</strong></article><article><span>Balance estimado</span><strong>${financeMoney(profit)}</strong></article>`;
 
   const today = new Date();
   const trend = Array.from({ length: 14 }, (_, index) => {
@@ -630,49 +628,29 @@ function paintFinance(entries) {
     return { label: new Intl.DateTimeFormat('es-PE', { timeZone: 'America/Lima', dateStyle: 'medium' }).format(day), shortLabel: key.slice(5), dateKey: key, value: amount };
   });
   renderInteractiveChart(document.querySelector('#financeTrendChart'), trend, 'line', 'vertical');
-  const costByDay = new Map();
-  for (const entry of entries) {
-    const key = financeLimaDayKey(entry.created_at);
-    const amount = entry.entry_type === 'sale'
-      ? Number(entry.cost_amount || 0)
-      : entry.category === 'productos' ? 0 : Number(entry.amount || 0);
-    costByDay.set(key, (costByDay.get(key) || 0) + amount);
-  }
-  const costTrend = trend.map(point => ({ ...point, value: costByDay.get(point.dateKey) || 0 }));
-  renderInteractiveChart(document.querySelector('#financeCostsTrendChart'), costTrend, 'bar', 'vertical');
-
-  const categories = new Map();
-  expenseEntries.forEach(entry => categories.set(entry.category, (categories.get(entry.category) || 0) + Number(entry.amount || 0)));
-  if (cogs > 0) categories.set('costo_productos', cogs);
-  renderInteractiveChart(expenseBreakdown, [...categories].sort((a, b) => b[1] - a[1]).map(([category, value]) => ({
-    label: category === 'costo_productos' ? 'Costo de productos vendidos' : financeCategoryLabels[category] || category,
-    value
-  })), 'bar', 'horizontal');
+  const costsBySource = new Map();
+  expenseEntries.forEach(entry => {
+    const source = String(entry.supplier || '').trim() || financeCategoryLabels[entry.category] || entry.category;
+    costsBySource.set(source, (costsBySource.get(source) || 0) + Number(entry.amount || 0));
+  });
+  renderInteractiveChart(financeSupplierChart, [...costsBySource].sort((a, b) => b[1] - a[1]).map(([label, value]) => ({ label, value })), 'bar', 'horizontal');
 
   financeSalesLedger.innerHTML = salesEntries.map(entry => {
     const quantity = Math.max(1, Number(entry.quantity || 1));
     const product = entry.product_id ? products.find(item => String(item.id) === String(entry.product_id)) : null;
     return `<tr><td>${financeDate(entry.created_at)}</td><td>${escapeHtml(product?.name || 'Venta general')}</td><td>${quantity} u.</td><td>${financeMoney(Number(entry.amount || 0) / quantity)}</td><td>${financeMoney(entry.amount)}</td><td><button class="finance-delete" type="button" data-finance-delete="${escapeHtml(entry.id)}" aria-label="Eliminar venta">Eliminar</button></td></tr>`;
   }).join('') || '<tr><td colspan="6">Aún no hay ventas confirmadas.</td></tr>';
-  const costRows = [
-    ...salesEntries.filter(entry => Number(entry.cost_amount || 0) > 0).map(entry => {
-      const quantity = Math.max(1, Number(entry.quantity || 1));
-      const product = entry.product_id ? products.find(item => String(item.id) === String(entry.product_id)) : null;
-      return { date: entry.created_at, html: `<tr><td>${financeDate(entry.created_at)}</td><td>Costo de producto vendido</td><td>${escapeHtml(product?.name || entry.description)}</td><td>${quantity} u.</td><td>${financeMoney(Number(entry.cost_amount || 0) / quantity)}</td><td>${financeMoney(entry.cost_amount)}</td><td><span class="finance-linked">Vinculado a venta</span></td></tr>` };
-    }),
-    ...expenseEntries.map(entry => {
-      const isInventory = entry.category === 'productos';
-      return { date: entry.created_at, html: `<tr><td>${financeDate(entry.created_at)}</td><td>${isInventory ? 'Compra de inventario' : 'Gasto operativo'}</td><td>${escapeHtml(entry.description)}</td><td>—</td><td>—</td><td>${financeMoney(entry.amount)}</td><td><button class="finance-delete" type="button" data-finance-delete="${escapeHtml(entry.id)}" aria-label="Eliminar compra o gasto">Eliminar</button></td></tr>` };
-    })
-  ].sort((a, b) => new Date(b.date) - new Date(a.date));
-  financeExpenseLedger.innerHTML = costRows.map(row => row.html).join('') || '<tr><td colspan="7">Aún no hay costos ni gastos registrados.</td></tr>';
+  financeExpenseLedger.innerHTML = expenseEntries.map(entry => {
+    const isInventory = entry.category === 'productos';
+    return `<tr><td>${financeDate(entry.created_at)}</td><td>${isInventory ? 'Compra a proveedor' : 'Gasto operativo'}</td><td>${escapeHtml(entry.supplier || '—')}</td><td>${escapeHtml(entry.description)}</td><td>${financeMoney(entry.amount)}</td><td><button class="finance-delete" type="button" data-finance-delete="${escapeHtml(entry.id)}" aria-label="Eliminar costo o gasto">Eliminar</button></td></tr>`;
+  }).join('') || '<tr><td colspan="6">Aún no hay costos ni gastos registrados.</td></tr>';
 }
 async function loadFinanceEntries() {
   financeStatus.textContent = 'Cargando movimientos…';
   try {
     let all = [], offset = 0, page;
     do {
-      page = await request(`/rest/v1/store_finance_entries?select=id,entry_type,description,category,amount,product_id,quantity,cost_amount,created_at&order=created_at.desc&limit=1000&offset=${offset}`);
+      page = await request(`/rest/v1/store_finance_entries?select=id,entry_type,description,category,amount,product_id,quantity,cost_amount,supplier,created_at&order=created_at.desc&limit=1000&offset=${offset}`);
       all.push(...(page || [])); offset += 1000;
     } while (page && page.length === 1000);
     latestFinanceEntries = all;
@@ -680,7 +658,7 @@ async function loadFinanceEntries() {
     financeStatus.textContent = `${all.length} movimientos registrados · montos en soles`;
     await Promise.all([loadFinanceProductPerformance(), loadPendingWhatsappOrders()]);
   } catch (error) {
-    financeStatus.textContent = /store_finance_entries|404|relation/i.test(error.message) ? 'Primero ejecuta supabase/add-store-finances.sql en Supabase → SQL Editor.' : `No se pudieron cargar las finanzas: ${error.message}`;
+    financeStatus.textContent = /supplier|schema cache/i.test(error.message) ? 'Falta habilitar el campo de proveedor. Ejecuta una vez supabase/link-whatsapp-orders-to-finance.sql en Supabase → SQL Editor.' : /store_finance_entries|404|relation/i.test(error.message) ? 'Primero ejecuta supabase/add-store-finances.sql en Supabase → SQL Editor.' : `No se pudieron cargar las finanzas: ${error.message}`;
   }
 }
 async function loadPendingWhatsappOrders() {
@@ -726,16 +704,15 @@ async function submitFinance(form, entryType) {
     const product = products.find(item => String(item.id) === productId);
     const quantity = Number(data.get('quantity'));
     const unitPrice = Number(data.get('unit_price'));
-    const unitCost = Number(data.get('unit_cost'));
-    if (!Number.isInteger(quantity) || quantity < 1 || !Number.isFinite(unitPrice) || unitPrice <= 0 || !Number.isFinite(unitCost) || unitCost < 0) {
-      financeStatus.textContent = 'Revisa cantidad y precios unitarios de venta y costo.';
+    if (!Number.isInteger(quantity) || quantity < 1 || !Number.isFinite(unitPrice) || unitPrice <= 0) {
+      financeStatus.textContent = 'Revisa la cantidad y el precio unitario de venta.';
       return;
     }
-    payload = { entry_type: 'sale', category: 'sale', description, amount, product_id: product?.id || null, quantity, cost_amount: Number((unitCost * quantity).toFixed(2)), created_at: createdAt.toISOString() };
+    payload = { entry_type: 'sale', category: 'sale', description, amount, product_id: product?.id || null, quantity, cost_amount: 0, created_at: createdAt.toISOString() };
     const analyticsEventId = String(data.get('analytics_event_id') || '');
     if (analyticsEventId) payload.analytics_event_id = Number(analyticsEventId);
   } else {
-    payload = { entry_type: 'expense', category: String(data.get('category')), description, amount, created_at: createdAt.toISOString() };
+    payload = { entry_type: 'expense', category: String(data.get('category')), description, supplier: String(data.get('supplier') || '').trim() || null, amount, created_at: createdAt.toISOString() };
   }
   const button = form.querySelector('button[type="submit"]');
   button.disabled = true;
@@ -745,7 +722,6 @@ async function submitFinance(form, entryType) {
     if (entryType === 'sale') {
       form.elements.quantity.value = '1';
       form.elements.unit_price.value = '';
-      form.elements.unit_cost.value = '0';
       financeSaleProduct.value = '';
     }
     setFinanceDateDefaults();
@@ -754,6 +730,8 @@ async function submitFinance(form, entryType) {
   } catch (error) {
     financeStatus.textContent = /store_finance_entries|404|relation/i.test(error.message)
       ? 'Falta crear store_finance_entries en Supabase. Ejecuta primero supabase/add-store-finances.sql.'
+      : /supplier|schema cache/i.test(error.message)
+        ? 'Ejecuta una vez supabase/link-whatsapp-orders-to-finance.sql para guardar el proveedor y vincular pedidos.'
       : /created_at|cost_amount|product_id|quantity|schema cache|column/i.test(error.message)
         ? 'Faltan columnas de Finanzas en Supabase. Ejecuta supabase/add-product-cost-and-finance.sql y verifica created_at.'
         : `No se pudo guardar: ${error.message}`;
@@ -797,11 +775,9 @@ financePendingWhatsapp.addEventListener('click', event => {
   form.elements.quantity.value = String(quantity);
   if (eventRecord) {
     form.elements.unit_price.value = Number(eventRecord.price || 0).toFixed(2);
-    form.elements.unit_cost.value = Number(eventRecord.cost_price || 0).toFixed(2);
     form.elements.description.value = `${eventRecord.name} × ${quantity}`;
   } else {
     form.elements.unit_price.value = '';
-    form.elements.unit_cost.value = '0';
     form.elements.description.value = `${productName} × ${quantity}`;
   }
   form.elements.amount.value = eventRecord ? (Number(eventRecord.price || 0) * quantity).toFixed(2) : '';
@@ -810,7 +786,11 @@ financePendingWhatsapp.addEventListener('click', event => {
 });
 document.querySelector('#financeSaleForm').addEventListener('submit', event => { event.preventDefault(); submitFinance(event.currentTarget, 'sale'); });
 document.querySelector('#financeExpenseForm').addEventListener('submit', event => { event.preventDefault(); submitFinance(event.currentTarget, 'expense'); });
-document.querySelectorAll('#financeSaleForm, #financeExpenseForm').forEach(form => form.addEventListener('reset', () => setTimeout(setFinanceDateDefaults)));
+const financeExpenseForm = document.querySelector('#financeExpenseForm');
+function syncFinanceSupplierRequired() { financeExpenseForm.elements.supplier.required = financeExpenseForm.elements.category.value === 'productos'; }
+financeExpenseForm.elements.category.addEventListener('change', syncFinanceSupplierRequired);
+syncFinanceSupplierRequired();
+document.querySelectorAll('#financeSaleForm, #financeExpenseForm').forEach(form => form.addEventListener('reset', () => setTimeout(() => { setFinanceDateDefaults(); syncFinanceSupplierRequired(); })));
 financeDialog.addEventListener('click', async event => {
   const button = event.target.closest('[data-finance-delete]');
   if (!button || !window.confirm('¿Eliminar este movimiento financiero?')) return;
@@ -820,7 +800,7 @@ financeDialog.addEventListener('click', async event => {
 });
 
 // Controles compartidos para alternar gráficas de línea, barras y circular.
-const chartPalette = ['#96556e','#54a17c','#d89a55','#7d78bd','#d76b83','#4d91a3','#c27e49','#748d54'];
+const chartPalette = ['#e63946','#457b9d','#2a9d8f','#f4a261','#7b2cbf','#f72585','#4361ee','#90be6d'];
 function renderInteractiveChart(node, points, initialMode='bar', initialOrientation='vertical') {
   node.chartPoints = points;
   const mode=node.querySelector('[data-chart-mode]')?.value||initialMode;
@@ -844,9 +824,9 @@ function renderInteractiveChart(node, points, initialMode='bar', initialOrientat
   }
   node.innerHTML=`<div class="chart-controls"><label>Tipo<select data-chart-mode><option value="line" ${mode==='line'?'selected':''}>Línea</option><option value="bar" ${mode==='bar'?'selected':''}>Barras</option><option value="pie" ${mode==='pie'?'selected':''}>Circular</option></select></label><label class="chart-orientation" ${mode==='line'||mode==='pie'?'hidden':''}>Orientación<select data-chart-orientation><option value="vertical" ${orientation==='vertical'?'selected':''}>Vertical</option><option value="horizontal" ${orientation==='horizontal'?'selected':''}>Horizontal</option></select></label></div>${visual}`;
 }
-function drawEventChart(node,events,type,color){const data=Array.from({length:24},(_,hour)=>events.filter(event=>event.event_type===type&&limaHour(event.created_at)===hour).length);renderInteractiveChart(node,data.map((value,hour)=>({label:`${String(hour).padStart(2,'0')}:00`,shortLabel:String(hour).padStart(2,'0'),value,color})),'bar','vertical')}
+function drawEventChart(node,events,type,color){const data=Array.from({length:24},(_,hour)=>events.filter(event=>event.event_type===type&&limaHour(event.created_at)===hour).length);renderInteractiveChart(node,data.map((value,hour)=>({label:`${String(hour).padStart(2,'0')}:00`,shortLabel:String(hour).padStart(2,'0'),value,color:chartPalette[(hour+(type==='whatsapp_click'?3:0))%chartPalette.length]})),'bar','vertical')}
 const paintAnalyticsWithCharts=paintAnalytics;
-paintAnalytics=function(events){paintAnalyticsWithCharts(events);const adds=events.filter(event=>event.event_type==='add_to_cart'),whatsapp=events.filter(event=>event.event_type==='whatsapp_click');renderInteractiveChart(document.querySelector('#interactionChart'),[{label:'Agregados al carrito',value:adds.length,color:'#96556e'},{label:'Clics en WhatsApp',value:whatsapp.length,color:'#54a17c'}],'pie','vertical')};
+paintAnalytics=function(events){paintAnalyticsWithCharts(events);const adds=events.filter(event=>event.event_type==='add_to_cart'),whatsapp=events.filter(event=>event.event_type==='whatsapp_click');renderInteractiveChart(document.querySelector('#interactionChart'),[{label:'Agregados al carrito',value:adds.length,color:'#e63946'},{label:'Clics en WhatsApp',value:whatsapp.length,color:'#2a9d8f'}],'pie','vertical')};
 document.addEventListener('change', event => { const chart = event.target.closest('[data-chart-mode], [data-chart-orientation]')?.closest('.analytics-chart'); if (chart?.chartPoints) renderInteractiveChart(chart, chart.chartPoints); });
 
 async function loadFinanceProductPerformance() {
