@@ -45,6 +45,18 @@
       <p class="form-message" id="loginMessage" role="status"></p>
     </section>
 
+    <section class="login-card" id="passwordRecoveryView" aria-labelledby="passwordRecoveryTitle" hidden>
+      <p class="eyebrow">Recuperar acceso</p>
+      <h1 id="passwordRecoveryTitle">Crea una contraseña nueva</h1>
+      <p>El enlace de recuperación es válido solo por un tiempo limitado.</p>
+      <form id="passwordRecoveryForm" class="form-stack">
+        <label>Nueva contraseña<input type="password" name="password" autocomplete="new-password" minlength="8" required></label>
+        <label>Repite la contraseña<input type="password" name="confirmPassword" autocomplete="new-password" minlength="8" required></label>
+        <button class="button" type="submit">Guardar contraseña</button>
+      </form>
+      <p class="form-message" id="passwordRecoveryMessage" role="status"></p>
+    </section>
+
     <section id="adminView" hidden>
       <div class="admin-intro">
         <div><p class="eyebrow">Panel privado</p><h1>Tu catálogo</h1><p>Agrega, edita, oculta o elimina productos. Los cambios se reflejarán en la tienda.</p></div>
@@ -112,6 +124,6 @@
     </dialog>
   </main>
   <script src="js/supabase-config.js"></script>
-  <script src="js/admin.js?v=admin-login-url-safety-20261115-1"></script>
+  <script src="js/admin.js?v=admin-password-recovery-20261115-1"></script>
 </body>
 </html>

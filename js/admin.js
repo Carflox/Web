@@ -7,6 +7,13 @@ const loginView = document.querySelector('#loginView');
 const adminView = document.querySelector('#adminView');
 const loginForm = document.querySelector('#loginForm');
 const loginMessage = document.querySelector('#loginMessage');
+const passwordRecoveryView = document.querySelector('#passwordRecoveryView');
+const passwordRecoveryForm = document.querySelector('#passwordRecoveryForm');
+const passwordRecoveryMessage = document.querySelector('#passwordRecoveryMessage');
+const recoveryParams = new URLSearchParams(window.location.hash.slice(1));
+const recoveryAccessToken = recoveryParams.get('type') === 'recovery' ? recoveryParams.get('access_token') : '';
+const recoveryErrorCode = recoveryParams.get('error_code');
+if (recoveryErrorCode || recoveryAccessToken) window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`);
 try {
   const emailFromUnsafeLink = sessionStorage.getItem('yc-nice-lady-login-email');
   const cameFromUnsafeLink = sessionStorage.getItem('yc-nice-lady-login-url-warning') === 'true';
@@ -20,6 +27,11 @@ try {
     setMessage(loginMessage, 'Por seguridad, eliminé la contraseña del enlace. Escribe tu contraseña actualizada en este formulario y pulsa Ingresar.');
   }
 } catch { /* El inicio de sesión sigue funcionando manualmente. */ }
+if (recoveryErrorCode === 'otp_expired') {
+  setMessage(loginMessage, 'El enlace venció o ya se usó. Corrige la URL de redirección de Supabase a Render y solicita uno nuevo.', true);
+} else if (recoveryErrorCode) {
+  setMessage(loginMessage, 'No se pudo validar el enlace. Solicita uno nuevo desde Supabase.', true);
+}
 const productForm = document.querySelector('#productForm');
 const productMessage = document.querySelector('#productMessage');
 const productList = document.querySelector('#adminProducts');
@@ -411,6 +423,12 @@ async function deleteProduct(product) {
 }
 
 async function showAdminForCurrentSession() {
+  if (recoveryAccessToken) {
+    loginView.hidden = true;
+    passwordRecoveryView.hidden = false;
+    adminView.hidden = true;
+    return;
+  }
   if (!storeIsConfigured) {
     setMessage(loginMessage, 'Falta la configuración de conexión de la tienda.', true);
     return;
@@ -451,6 +469,50 @@ loginForm.addEventListener('submit', async (event) => {
   } catch (error) {
     clearSession();
     setMessage(loginMessage, error.message === 'Invalid login credentials' ? 'Correo o contraseña incorrectos.' : `No se pudo iniciar sesión: ${error.message}`, true);
+  }
+});
+
+passwordRecoveryForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const form = new FormData(passwordRecoveryForm);
+  const password = String(form.get('password') || '');
+  const confirmPassword = String(form.get('confirmPassword') || '');
+  if (password !== confirmPassword) {
+    setMessage(passwordRecoveryMessage, 'Las contraseñas no coinciden.', true);
+    return;
+  }
+
+  const button = passwordRecoveryForm.querySelector('button[type="submit"]');
+  button.disabled = true;
+  setMessage(passwordRecoveryMessage, 'Actualizando contraseña…');
+  try {
+    const response = await fetch(apiUrl('/auth/v1/user'), {
+      method: 'PUT',
+      headers: {
+        apikey: SUPABASE_PUBLISHABLE_KEY,
+        Authorization: `Bearer ${recoveryAccessToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ password })
+    });
+    const responseText = await response.text();
+    let payload = null;
+    try { payload = responseText ? JSON.parse(responseText) : null; } catch { payload = null; }
+    if (!response.ok) {
+      throw new Error(payload?.message || payload?.msg || payload?.error_description || 'No se pudo actualizar la contraseña. Solicita otro enlace.');
+    }
+
+    clearSession();
+    passwordRecoveryForm.reset();
+    window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`);
+    passwordRecoveryView.hidden = true;
+    loginView.hidden = false;
+    loginView.querySelector('[name="email"]').focus();
+    setMessage(loginMessage, 'Contraseña actualizada. Inicia sesión con la nueva contraseña.');
+  } catch (error) {
+    setMessage(passwordRecoveryMessage, error.message || 'No se pudo actualizar la contraseña.', true);
+  } finally {
+    button.disabled = false;
   }
 });
 
