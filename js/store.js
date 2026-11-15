@@ -1,6 +1,6 @@
 const config = window.YCNiceLadyConfig || {};
-const { productsBucket: PRODUCTS_BUCKET, publishableKey: SUPABASE_PUBLISHABLE_KEY, supabaseUrl: SUPABASE_URL, whatsappNumber: WHATSAPP_NUMBER = '' } = config;
-const storeIsConfigured = Boolean(SUPABASE_URL && SUPABASE_PUBLISHABLE_KEY && PRODUCTS_BUCKET);
+const { productsBucket: PRODUCTS_BUCKET, supabaseUrl: SUPABASE_URL, whatsappNumber: WHATSAPP_NUMBER = '' } = config;
+const storeIsConfigured = true;
 const grid = document.querySelector('#productGrid');
 const status = document.querySelector('#productStatus');
 const dialog = document.querySelector('#cartDialog');
@@ -45,7 +45,7 @@ function formatMoney(value) {
 }
 
 function imageUrl(path) {
-  if (!path || !storeIsConfigured) return '';
+  if (!path || !SUPABASE_URL || !PRODUCTS_BUCKET) return '';
   const safePath = String(path).split('/').map(encodeURIComponent).join('/');
   return `${SUPABASE_URL}/storage/v1/object/public/${encodeURIComponent(PRODUCTS_BUCKET)}/${safePath}`;
 }
@@ -84,20 +84,17 @@ function getCartQuantity(id) {
 }
 
 function trackStoreEvent(eventType, { product = null, quantity = 1 } = {}) {
-  if (!storeIsConfigured || !['add_to_cart', 'whatsapp_click'].includes(eventType)) return;
+  if (!['add_to_cart', 'whatsapp_click'].includes(eventType)) return;
   const payload = {
     event_type: eventType,
     product_id: product?.id || null,
     product_name: product?.name || (eventType === 'whatsapp_click' ? 'Pedido por WhatsApp' : 'Producto'),
     quantity: Math.max(1, Math.min(1000, Math.trunc(Number(quantity) || 1)))
   };
-  fetch(`${SUPABASE_URL}/rest/v1/store_analytics_events`, {
+  fetch('/rest/v1/store_analytics_events', {
     method: 'POST',
     headers: {
-      apikey: SUPABASE_PUBLISHABLE_KEY,
-      Authorization: `Bearer ${SUPABASE_PUBLISHABLE_KEY}`,
       'Content-Type': 'application/json',
-      Prefer: 'return=minimal'
     },
     body: JSON.stringify(payload),
     keepalive: true
@@ -261,12 +258,7 @@ async function loadProducts({ loading = true } = {}) {
       is_active: 'eq.true',
       order: 'created_at.desc'
     });
-    const query = fetch(`${SUPABASE_URL}/rest/v1/products?${search}`, {
-      headers: {
-        apikey: SUPABASE_PUBLISHABLE_KEY,
-        Authorization: `Bearer ${SUPABASE_PUBLISHABLE_KEY}`
-      }
-    }).then(async (response) => {
+    const query = fetch(`/rest/v1/products?${search}`).then(async (response) => {
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.message || 'No se pudo consultar el catálogo.');
       return payload;
@@ -294,11 +286,9 @@ async function loadProducts({ loading = true } = {}) {
 }
 
 async function reserveCartStock(entries) {
-  const response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/reserve_whatsapp_order`, {
+  const response = await fetch('/api/orders', {
     method: 'POST',
     headers: {
-      apikey: SUPABASE_PUBLISHABLE_KEY,
-      Authorization: `Bearer ${SUPABASE_PUBLISHABLE_KEY}`,
       'Content-Type': 'application/json'
     },
     body: JSON.stringify({

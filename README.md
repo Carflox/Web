@@ -76,3 +76,17 @@ y guardar la fotografía dentro de la carpeta `img`.
 ## Nota
 
 Los números de WhatsApp, Instagram, precios y datos de pago son datos de ejemplo y deben reemplazarse por los datos reales antes de publicar la página.
+
+## Servidor Python y datos del negocio
+
+El servicio `app.py` ejecuta el catálogo, el acceso privado, las estadísticas, los pedidos pendientes y las finanzas en Python con SQLite. Supabase queda para servir, subir y eliminar fotografías. La clave privada de Storage (`SUPABASE_SERVICE_ROLE_KEY`) solo se usa dentro de Python; nunca debe ponerse en archivos JavaScript ni subirse a GitHub.
+
+Para iniciar localmente, completa `.env` con `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `SESSION_SECRET`, `SUPABASE_SERVICE_ROLE_KEY` y la URL y bucket de Supabase. `.env.example` muestra los nombres. Usa `ABRIR_ADMIN.bat` para iniciar el servidor Python y abrir `http://localhost:3000/admin`; también puedes iniciar `python app.py` y abrir `http://localhost:10000/admin`.
+
+En Render, configura `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `SESSION_SECRET`, `SUPABASE_URL`, `SUPABASE_PRODUCTS_BUCKET` y `SUPABASE_SERVICE_ROLE_KEY` en **Environment**. Para conservar la base SQLite entre reinicios y despliegues, conecta un disco persistente y configura `STORE_DB_PATH=/var/data/store.sqlite3` con el punto de montaje `/var/data`. Sin un disco persistente, Render puede borrar los registros locales al reiniciar o volver a desplegar.
+
+### Trasladar el catálogo existente
+
+La base Python comienza vacía. Antes de usar el nuevo sitio público, conserva el catálogo anterior y ejecuta una sola vez `migrate_catalog.py` para copiar productos, rutas de fotos y, si las políticas lo permiten, actividad histórica desde Supabase. Completa temporalmente en `.env` `LEGACY_SUPABASE_URL`, `LEGACY_SUPABASE_PUBLISHABLE_KEY`, `PYTHON_ADMIN_URL`, `ADMIN_EMAIL` y `ADMIN_PASSWORD`; luego ejecuta `python migrate_catalog.py`. La clave publicable se usa solo durante esa copia y se puede borrar de `.env` después. No elimines el proyecto ni las tablas antiguas hasta comprobar el catálogo, las fotos y los registros en Python.
+
+Las finanzas guardadas en el navegador se copian al servidor cuando inicias sesión por primera vez desde ese mismo navegador. Los eventos nuevos se guardan en SQLite.

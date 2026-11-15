@@ -1,4 +1,4 @@
-const SHELL_CACHE = 'yc-nice-lady-shell-v1';
+const SHELL_CACHE = 'yc-nice-lady-shell-v2-python';
 const IMAGE_CACHE = 'yc-nice-lady-images-v1';
 const IMAGE_CACHE_LIMIT = 120;
 const SHELL_ASSETS = [
@@ -10,7 +10,7 @@ const SHELL_ASSETS = [
   '/css/style.css?v=logo-transparent-20261114-1',
   '/js/script.js',
   '/js/supabase-config.js',
-  '/js/store.js?v=offline-catalog-20261115-1'
+  '/js/store.js?v=python-backend-20261115-1'
 ];
 
 self.addEventListener('install', event => {

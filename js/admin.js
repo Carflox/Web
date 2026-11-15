@@ -1,20 +1,12 @@
 const config = window.YCNiceLadyConfig || {};
-const { productsBucket: PRODUCTS_BUCKET, publishableKey: SUPABASE_PUBLISHABLE_KEY, supabaseUrl: SUPABASE_URL } = config;
-const storeIsConfigured = Boolean(SUPABASE_URL && SUPABASE_PUBLISHABLE_KEY && PRODUCTS_BUCKET);
-// Fuerza nueva autenticación tras recrear el usuario de Supabase; evita reutilizar tokens del usuario eliminado.
-const sessionStorageKey = 'yc-nice-lady-admin-session-v2';
+const { productsBucket: PRODUCTS_BUCKET, supabaseUrl: SUPABASE_URL } = config;
+const storeIsConfigured = true;
+const sessionStorageKey = 'yc-nice-lady-python-session-v1';
 
 const loginView = document.querySelector('#loginView');
 const adminView = document.querySelector('#adminView');
 const loginForm = document.querySelector('#loginForm');
 const loginMessage = document.querySelector('#loginMessage');
-const passwordRecoveryView = document.querySelector('#passwordRecoveryView');
-const passwordRecoveryForm = document.querySelector('#passwordRecoveryForm');
-const passwordRecoveryMessage = document.querySelector('#passwordRecoveryMessage');
-const recoveryParams = new URLSearchParams(window.location.hash.slice(1));
-const recoveryAccessToken = recoveryParams.get('type') === 'recovery' ? recoveryParams.get('access_token') : '';
-const recoveryErrorCode = recoveryParams.get('error_code');
-if (recoveryErrorCode || recoveryAccessToken) window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`);
 try {
   const emailFromUnsafeLink = sessionStorage.getItem('yc-nice-lady-login-email');
   const cameFromUnsafeLink = sessionStorage.getItem('yc-nice-lady-login-url-warning') === 'true';
@@ -28,11 +20,6 @@ try {
     setMessage(loginMessage, 'Por seguridad, eliminé la contraseña del enlace. Escribe tu contraseña actualizada en este formulario y pulsa Ingresar.');
   }
 } catch { /* El inicio de sesión sigue funcionando manualmente. */ }
-if (recoveryErrorCode === 'otp_expired') {
-  setMessage(loginMessage, 'El enlace venció o ya se usó. Corrige la URL de redirección de Supabase a Render y solicita uno nuevo.', true);
-} else if (recoveryErrorCode) {
-  setMessage(loginMessage, 'No se pudo validar el enlace. Solicita uno nuevo desde Supabase.', true);
-}
 const productForm = document.querySelector('#productForm');
 const productMessage = document.querySelector('#productMessage');
 const productList = document.querySelector('#adminProducts');
@@ -77,7 +64,7 @@ function clearSession() {
 }
 
 function apiUrl(path) {
-  return `${SUPABASE_URL}${path}`;
+  return path;
 }
 
 function publicStorageUrl(path) {
@@ -88,10 +75,11 @@ function publicStorageUrl(path) {
 
 async function request(path, options = {}, { useSession = true } = {}) {
   const headers = new Headers(options.headers || {});
-  headers.set('apikey', SUPABASE_PUBLISHABLE_KEY);
-  headers.set('Authorization', `Bearer ${useSession && session ? session.accessToken : SUPABASE_PUBLISHABLE_KEY}`);
+  if (useSession && session?.accessToken) {
+    headers.set('Authorization', `Bearer ${session.accessToken}`);
+  }
 
-  const response = await fetch(apiUrl(path), { ...options, headers });
+  const response = await fetch(apiUrl(path), { ...options, headers, credentials: 'same-origin' });
   const responseText = await response.text();
   let payload = null;
   try { payload = responseText ? JSON.parse(responseText) : null; } catch { payload = responseText; }
@@ -174,11 +162,8 @@ function renderProducts() {
 }
 
 async function isStoreAdmin() {
-  return (await request('/rest/v1/rpc/is_store_admin', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: '{}'
-  })) === true;
+  const result = await request('/api/session');
+  return result.authenticated === true;
 }
 
 async function loadProducts({ preserveScroll = false, scrollTop = productList.scrollTop } = {}) {
@@ -315,20 +300,17 @@ function newProductId() {
 
 async function uploadImage(imagePath, file) {
   const safePath = imagePath.split('/').map(encodeURIComponent).join('/');
-  await request(`/storage/v1/object/${encodeURIComponent(PRODUCTS_BUCKET)}/${safePath}`, {
+  await request(`/api/images/${encodeURIComponent(PRODUCTS_BUCKET)}/${safePath}`, {
     method: 'POST',
-    headers: { 'Content-Type': file.type, 'x-upsert': 'false', 'cache-control': '3600' },
+    headers: { 'Content-Type': file.type },
     body: file
   });
 }
 
 async function removeImage(imagePath) {
   if (!imagePath) return;
-  await request(`/storage/v1/object/${encodeURIComponent(PRODUCTS_BUCKET)}`, {
-    method: 'DELETE',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ prefixes: [imagePath] })
-  });
+  const safePath = imagePath.split('/').map(encodeURIComponent).join('/');
+  await request(`/api/images/${encodeURIComponent(PRODUCTS_BUCKET)}/${safePath}`, { method: 'DELETE' });
 }
 
 async function saveProduct(event) {
@@ -424,16 +406,6 @@ async function deleteProduct(product) {
 }
 
 async function showAdminForCurrentSession() {
-  if (recoveryAccessToken) {
-    loginView.hidden = true;
-    passwordRecoveryView.hidden = false;
-    adminView.hidden = true;
-    return;
-  }
-  if (!storeIsConfigured) {
-    setMessage(loginMessage, 'Falta la configuración de conexión de la tienda.', true);
-    return;
-  }
   if (!session) {
     loginView.hidden = false;
     adminView.hidden = true;
@@ -446,6 +418,7 @@ async function showAdminForCurrentSession() {
     loginView.hidden = true;
     adminView.hidden = false;
     setMessage(loginMessage);
+    try { await migrateLegacyBrowserData(); } catch (migrationError) { console.warn('No se pudo trasladar el historial local:', migrationError); }
     await loadProducts();
   } catch (error) {
     clearSession();
@@ -470,50 +443,6 @@ loginForm.addEventListener('submit', async (event) => {
   } catch (error) {
     clearSession();
     setMessage(loginMessage, error.message === 'Invalid login credentials' ? 'Correo o contraseña incorrectos.' : `No se pudo iniciar sesión: ${error.message}`, true);
-  }
-});
-
-passwordRecoveryForm.addEventListener('submit', async (event) => {
-  event.preventDefault();
-  const form = new FormData(passwordRecoveryForm);
-  const password = String(form.get('password') || '');
-  const confirmPassword = String(form.get('confirmPassword') || '');
-  if (password !== confirmPassword) {
-    setMessage(passwordRecoveryMessage, 'Las contraseñas no coinciden.', true);
-    return;
-  }
-
-  const button = passwordRecoveryForm.querySelector('button[type="submit"]');
-  button.disabled = true;
-  setMessage(passwordRecoveryMessage, 'Actualizando contraseña…');
-  try {
-    const response = await fetch(apiUrl('/auth/v1/user'), {
-      method: 'PUT',
-      headers: {
-        apikey: SUPABASE_PUBLISHABLE_KEY,
-        Authorization: `Bearer ${recoveryAccessToken}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ password })
-    });
-    const responseText = await response.text();
-    let payload = null;
-    try { payload = responseText ? JSON.parse(responseText) : null; } catch { payload = null; }
-    if (!response.ok) {
-      throw new Error(payload?.message || payload?.msg || payload?.error_description || 'No se pudo actualizar la contraseña. Solicita otro enlace.');
-    }
-
-    clearSession();
-    passwordRecoveryForm.reset();
-    window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`);
-    passwordRecoveryView.hidden = true;
-    loginView.hidden = false;
-    loginView.querySelector('[name="email"]').focus();
-    setMessage(loginMessage, 'Contraseña actualizada. Inicia sesión con la nueva contraseña.');
-  } catch (error) {
-    setMessage(passwordRecoveryMessage, error.message || 'No se pudo actualizar la contraseña.', true);
-  } finally {
-    button.disabled = false;
   }
 });
 
@@ -587,6 +516,7 @@ productList.addEventListener('dragend', () => {
   productList.querySelectorAll('.is-dragging, .drop-before, .drop-after').forEach((card) => card.classList.remove('is-dragging', 'drop-before', 'drop-after'));
 });
 document.querySelector('#signOut').addEventListener('click', async () => {
+  try { await request('/auth/v1/logout', { method: 'POST', body: '{}' }, { useSession: false }); } catch { /* La sesión local igual se limpia. */ }
   clearSession();
   resetProductForm();
   await showAdminForCurrentSession();
@@ -639,7 +569,7 @@ function paintAnalytics(events) {
   document.querySelector('#analyticsHistory').innerHTML=events.map(e=>{const p=products.find(x=>x.id===e.product_id);const url=p?.image_path?publicStorageUrl(p.image_path):'';const when=new Intl.DateTimeFormat('es-PE',{timeZone:'America/Lima',dateStyle:'short',timeStyle:'short',hourCycle:'h23'}).format(new Date(e.created_at));return `<tr><td>${when}</td><td>${e.event_type==='add_to_cart'?'Agregó al carrito':'Clic para pedir por WhatsApp'}</td><td>${url?`<a class="analytics-history-product" href="${url}" target="_blank" rel="noopener"><img src="${url}" alt="">${escapeHtml(e.product_name)}</a>`:escapeHtml(e.product_name)}</td><td>${e.quantity}</td></tr>`}).join('')||'<tr><td colspan="4">No hay actividad registrada todavía.</td></tr>';
   document.querySelector('#analyticsHistorySummary').textContent=`${events.length} eventos; historial completo, del más reciente al más antiguo.`;analyticsContent.hidden=false;
 }
-async function loadAnalyticsHistory(){analyticsStatus.textContent='Cargando historial de actividad…';analyticsContent.hidden=true;try{let all=[],offset=0,page;do{page=await request(`/rest/v1/store_analytics_events?select=id,event_type,product_id,product_name,quantity,created_at&order=created_at.desc&limit=1000&offset=${offset}`);all.push(...(page||[]));offset+=1000}while(page&&page.length===1000);const dismissedIds=readDismissedWhatsappIds();all=all.filter(item=>!dismissedIds.has(String(item.id)));paintAnalytics(all);analyticsStatus.textContent='Actividad del catálogo · los pedidos descartados se excluyen de los gráficos'}catch(e){analyticsStatus.textContent=/store_analytics_events|404|relation/i.test(e.message)?'La actividad del catálogo todavía no está disponible.':`No se pudo cargar: ${e.message}`}}
+async function loadAnalyticsHistory(){analyticsStatus.textContent='Cargando historial de actividad…';analyticsContent.hidden=true;try{await loadDismissedWhatsappIds();let all=[],offset=0,page;do{page=await request(`/rest/v1/store_analytics_events?select=id,event_type,product_id,product_name,quantity,created_at&order=created_at.desc&limit=1000&offset=${offset}`);all.push(...(page||[]));offset+=1000}while(page&&page.length===1000);const dismissedIds=readDismissedWhatsappIds();all=all.filter(item=>!dismissedIds.has(String(item.id)));paintAnalytics(all);analyticsStatus.textContent='Actividad del catálogo · los pedidos descartados se excluyen de los gráficos'}catch(e){analyticsStatus.textContent=`No se pudo cargar: ${e.message}`}}
 document.querySelector('#openAnalytics').addEventListener('click',()=>{analyticsDialog.showModal();loadAnalyticsHistory()});
 document.querySelector('#closeAnalytics').addEventListener('click',()=>analyticsDialog.close());
 analyticsDialog.addEventListener('click',e=>{if(e.target===analyticsDialog)analyticsDialog.close()});
@@ -655,25 +585,34 @@ const financePendingWhatsapp = document.querySelector('#financePendingWhatsapp')
 const financePendingStatus = document.querySelector('#financePendingStatus');
 const financeCategoryLabels = { sale: 'Venta', delivery: 'Delivery pagado', gasolina: 'Gasolina', material_moto: 'Materiales de moto', productos: 'Compra de inventario', empaque: 'Empaques', otros: 'Otros gastos' };
 const financeSaleProduct = document.querySelector('#financeSaleProduct');
-const FINANCE_STORAGE_KEY = 'ycNiceLady.financeEntries.v1';
-const DISMISSED_WHATSAPP_STORAGE_KEY = 'ycNiceLady.dismissedWhatsAppEvents.v1';
 let latestFinanceEntries = [];
-function readFinanceEntries() {
-  try { const rows = JSON.parse(localStorage.getItem(FINANCE_STORAGE_KEY) || '[]'); return Array.isArray(rows) ? rows : []; }
-  catch { return []; }
+let dismissedWhatsappIds = new Set();
+async function migrateLegacyBrowserData() {
+  const marker = 'ycNiceLady.pythonMigration.v1';
+  if (localStorage.getItem(marker) === 'done') return;
+  const oldFinance = JSON.parse(localStorage.getItem('ycNiceLady.financeEntries.v1') || '[]');
+  const oldDismissed = JSON.parse(localStorage.getItem('ycNiceLady.dismissedWhatsAppEvents.v1') || '[]');
+  if (!Array.isArray(oldFinance) || !Array.isArray(oldDismissed)) throw new Error('El respaldo antiguo del navegador no tiene un formato válido.');
+  const current = await request('/api/finance');
+  const ids = new Set(current.map(row => String(row.id)));
+  const analyticsIds = new Set(current.map(row => String(row.analytics_event_id || '')).filter(Boolean));
+  for (const entry of oldFinance) {
+    if (ids.has(String(entry.id)) || (entry.analytics_event_id && analyticsIds.has(String(entry.analytics_event_id)))) continue;
+    await request('/api/finance', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(entry) });
+  }
+  const currentDismissed = new Set((await request('/api/dismissed-whatsapp')).map(String));
+  for (const id of oldDismissed) {
+    if (!currentDismissed.has(String(id))) await request('/api/dismissed-whatsapp', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ event_id: String(id) }) });
+  }
+  localStorage.setItem(marker, 'done');
 }
-function writeFinanceEntries(rows) {
-  try { localStorage.setItem(FINANCE_STORAGE_KEY, JSON.stringify(rows)); return true; }
-  catch { financeStatus.textContent = 'No se pudo guardar en este navegador. Libera espacio del navegador e inténtalo de nuevo.'; return false; }
+async function loadDismissedWhatsappIds() {
+  dismissedWhatsappIds = new Set((await request('/api/dismissed-whatsapp')).map(String));
 }
-function readDismissedWhatsappIds() {
-  try { const ids = JSON.parse(localStorage.getItem(DISMISSED_WHATSAPP_STORAGE_KEY) || '[]'); return new Set(Array.isArray(ids) ? ids.map(String) : []); }
-  catch { return new Set(); }
-}
-function dismissWhatsappLocally(id) {
-  const ids = readDismissedWhatsappIds(); ids.add(String(id));
-  try { localStorage.setItem(DISMISSED_WHATSAPP_STORAGE_KEY, JSON.stringify([...ids])); return true; }
-  catch { financeStatus.textContent = 'No se pudo guardar el descarte en este navegador.'; return false; }
+function readDismissedWhatsappIds() { return dismissedWhatsappIds; }
+async function dismissWhatsapp(id) {
+  await request('/api/dismissed-whatsapp', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ event_id: String(id) }) });
+  dismissedWhatsappIds.add(String(id));
 }
 function financeMoney(value) { return `S/ ${Number(value || 0).toFixed(2)}`; }
 function financeDate(value) { return new Intl.DateTimeFormat('es-PE', { timeZone: 'America/Lima', dateStyle: 'short', timeStyle: 'short', hourCycle: 'h23' }).format(new Date(value)); }
@@ -741,10 +680,10 @@ function paintFinance(entries) {
   }).join('') || '<tr><td colspan="6">Aún no hay costos ni gastos registrados.</td></tr>';
 }
 async function loadFinanceEntries() {
-  const all = readFinanceEntries().sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+  const [all] = await Promise.all([request('/api/finance'), loadDismissedWhatsappIds()]);
   latestFinanceEntries = all;
   paintFinance(all);
-  financeStatus.textContent = `${all.length} movimientos guardados solo en este navegador · no se envían a Supabase`;
+  financeStatus.textContent = `${all.length} movimientos guardados en el servidor Python`;
   await Promise.all([loadFinanceProductPerformance(), loadPendingWhatsappOrders()]);
 }
 async function loadPendingWhatsappOrders() {
@@ -762,7 +701,7 @@ async function loadPendingWhatsappOrders() {
     financePendingStatus.textContent = `${pending.length} pedidos pendientes · confirma los concretados y descarta los demás.`;
   } catch (error) {
     financePendingWhatsapp.innerHTML = '<tr><td colspan="4">No se pudo leer la actividad de WhatsApp del catálogo.</td></tr>';
-    financePendingStatus.textContent = 'Las ventas y gastos se guardan localmente; la lista de clics depende de las estadísticas públicas.';
+    financePendingStatus.textContent = `No se pudieron cargar los pedidos: ${error.message}`;
   }
 }
 async function submitFinance(form, entryType) {
@@ -792,14 +731,19 @@ async function submitFinance(form, entryType) {
   }
   const button = form.querySelector('button[type="submit"]');
   button.disabled = true;
-  const localEntries = readFinanceEntries();
-  if (payload.analytics_event_id && localEntries.some(row => String(row.analytics_event_id || '') === payload.analytics_event_id)) {
-    financeStatus.textContent = 'Este pedido ya se confirmó como venta en este navegador.';
+  if (payload.analytics_event_id && latestFinanceEntries.some(row => String(row.analytics_event_id || '') === payload.analytics_event_id)) {
+    financeStatus.textContent = 'Este pedido ya se confirmó como venta.';
     button.disabled = false;
     return;
   }
   payload.id = globalThis.crypto?.randomUUID?.() || `local-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  if (!writeFinanceEntries([...localEntries, payload])) { button.disabled = false; return; }
+  try {
+    await request('/api/finance', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+  } catch (error) {
+    financeStatus.textContent = `No se pudo guardar en Python: ${error.message}`;
+    button.disabled = false;
+    return;
+  }
   form.reset();
   if (entryType === 'sale') {
     form.elements.quantity.value = '1';
@@ -809,8 +753,8 @@ async function submitFinance(form, entryType) {
   setFinanceDateDefaults();
   await loadFinanceEntries();
   financeStatus.textContent = entryType === 'sale'
-    ? 'Venta confirmada guardada solo en este navegador.'
-    : payload.category === 'productos' ? 'Compra del proveedor guardada solo en este navegador.' : 'Gasto guardado solo en este navegador.';
+    ? 'Venta confirmada guardada en el servidor.'
+    : payload.category === 'productos' ? 'Compra del proveedor guardada en el servidor.' : 'Gasto guardado en el servidor.';
   button.disabled = false;
 }
 document.querySelector('#openFinance').addEventListener('click', () => {
@@ -828,8 +772,8 @@ financePendingWhatsapp.addEventListener('click', event => {
   const dismissButton = event.target.closest('[data-whatsapp-dismiss]');
   if (dismissButton) {
     dismissButton.disabled = true;
-    if (dismissWhatsappLocally(dismissButton.dataset.whatsappDismiss)) await loadFinanceEntries();
-    else dismissButton.disabled = false;
+    try { await dismissWhatsapp(dismissButton.dataset.whatsappDismiss); await loadFinanceEntries(); }
+    catch (error) { financeStatus.textContent = `No se pudo descartar el pedido: ${error.message}`; dismissButton.disabled = false; }
     return;
   }
   const button = event.target.closest('[data-whatsapp-review]');
@@ -868,11 +812,12 @@ financeDialog.addEventListener('click', async event => {
   const button = event.target.closest('[data-finance-delete]');
   if (!button || !window.confirm('¿Eliminar este movimiento financiero?')) return;
   button.disabled = true;
-  const rows = readFinanceEntries();
-  const removed = rows.find(row => String(row.id) === String(button.dataset.financeDelete));
-  if (removed?.analytics_event_id) dismissWhatsappLocally(removed.analytics_event_id);
-  if (writeFinanceEntries(rows.filter(row => String(row.id) !== String(button.dataset.financeDelete)))) await loadFinanceEntries();
-  else button.disabled = false;
+  const removed = latestFinanceEntries.find(row => String(row.id) === String(button.dataset.financeDelete));
+  try {
+    await request(`/api/finance?id=${encodeURIComponent(button.dataset.financeDelete)}`, { method: 'DELETE' });
+    if (removed?.analytics_event_id) await dismissWhatsapp(removed.analytics_event_id);
+    await loadFinanceEntries();
+  } catch (error) { financeStatus.textContent = `No se pudo eliminar el movimiento: ${error.message}`; button.disabled = false; }
 });
 
 // Controles compartidos para alternar gráficas de línea, barras y circular.
@@ -910,6 +855,7 @@ async function loadFinanceProductPerformance() {
   const status = document.querySelector('#financeProductPerformanceStatus');
   if (!body || !status) return;
   try {
+    await loadDismissedWhatsappIds();
     let events = [], offset = 0, page;
     do {
       page = await request(`/rest/v1/store_analytics_events?select=id,event_type,product_id,quantity&order=created_at.desc&limit=1000&offset=${offset}`);
