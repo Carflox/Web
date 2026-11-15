@@ -74,7 +74,8 @@
         <div class="analytics-charts finance-charts"><section><h3>Ventas confirmadas por día</h3><div id="financeTrendChart" class="analytics-chart"></div></section><section><h3>Costo vendido y gastos operativos por día</h3><div id="financeCostsTrendChart" class="analytics-chart"></div></section></div><section class="analytics-history chart-section"><h3>Detalle de costos y gastos</h3><div id="expenseBreakdown"></div></section>
         <section class="analytics-history"><h3>Estadísticas y ventas por producto</h3><p id="financeProductPerformanceStatus">Comparando interacción del catálogo con ventas registradas.</p><div class="analytics-table-wrap"><table><thead><tr><th>Producto</th><th>Agregado al carrito</th><th>Clics WhatsApp</th><th>Unidades vendidas</th><th>Ingresos</th></tr></thead><tbody id="financeProductPerformance"></tbody></table></div></section>
         <section class="analytics-history"><h3>Productos con nombres o fotos similares</h3><p id="similarProductsStatus">Revisaremos el catálogo público al abrir Finanzas. Este informe es informativo y no bloquea el guardado.</p><div class="analytics-table-wrap"><table><thead><tr><th>Producto e imagen</th><th>Coincidencia</th><th>Carrito</th><th>WhatsApp</th><th>Unidades vendidas</th><th>Ingresos</th></tr></thead><tbody id="similarProductsLedger"></tbody></table></div></section>
-        <section class="analytics-history"><h3>Movimientos financieros</h3><div class="analytics-table-wrap"><table><thead><tr><th>Fecha y hora</th><th>Tipo</th><th>Descripción</th><th>Producto / categoría</th><th>Cantidad</th><th>Precio venta c/u</th><th>Costo c/u</th><th>Total</th><th>Costo total</th><th></th></tr></thead><tbody id="financeLedger"></tbody></table></div></section>
+        <section class="analytics-history"><h3>Registro de ventas confirmadas</h3><div class="analytics-table-wrap"><table><thead><tr><th>Fecha y hora</th><th>Producto</th><th>Cantidad</th><th>Precio de venta c/u</th><th>Ingreso total</th><th></th></tr></thead><tbody id="financeSalesLedger"></tbody></table></div></section>
+        <section class="analytics-history"><h3>Registro de costos, compras y gastos</h3><div class="analytics-table-wrap"><table><thead><tr><th>Fecha y hora</th><th>Tipo de costo</th><th>Descripción</th><th>Cantidad</th><th>Costo c/u</th><th>Monto</th><th></th></tr></thead><tbody id="financeExpenseLedger"></tbody></table></div></section>
       </div>
     </dialog>
     <dialog class="admin-analytics" id="adminAnalytics" aria-labelledby="analyticsTitle">
@@ -93,6 +94,6 @@
     </dialog>
   </main>
   <script src="js/supabase-config.js"></script>
-  <script src="js/admin.js?v=finance-confirmed-orders-color-charts-20261115-2"></script>
+  <script src="js/admin.js?v=finance-separated-records-20261115-3"></script>
 </body>
 </html>

@@ -572,7 +572,8 @@ analyticsDialog.addEventListener('click',e=>{if(e.target===analyticsDialog)analy
 const financeDialog = document.querySelector('#adminFinance');
 const financeStatus = document.querySelector('#financeStatus');
 const financeTotals = document.querySelector('#financeTotals');
-const financeLedger = document.querySelector('#financeLedger');
+const financeSalesLedger = document.querySelector('#financeSalesLedger');
+const financeExpenseLedger = document.querySelector('#financeExpenseLedger');
 const expenseBreakdown = document.querySelector('#expenseBreakdown');
 const financePendingWhatsapp = document.querySelector('#financePendingWhatsapp');
 const financePendingStatus = document.querySelector('#financePendingStatus');
@@ -648,17 +649,23 @@ function paintFinance(entries) {
     value
   })), 'bar', 'horizontal');
 
-  financeLedger.innerHTML = entries.map(entry => {
-    const isSale = entry.entry_type === 'sale';
-    const isInventory = !isSale && entry.category === 'productos';
+  financeSalesLedger.innerHTML = salesEntries.map(entry => {
     const quantity = Math.max(1, Number(entry.quantity || 1));
-    const product = isSale && entry.product_id ? products.find(item => String(item.id) === String(entry.product_id)) : null;
-    const unitSale = isSale ? Number(entry.amount || 0) / quantity : null;
-    const unitCost = isSale ? Number(entry.cost_amount || 0) / quantity : null;
-    const type = isSale ? 'Venta confirmada' : isInventory ? 'Compra de inventario' : 'Gasto operativo';
-    const item = product?.name || (isSale ? 'Venta general' : financeCategoryLabels[entry.category] || entry.category);
-    return `<tr><td>${financeDate(entry.created_at)}</td><td>${type}</td><td>${escapeHtml(entry.description)}</td><td>${escapeHtml(item)}</td><td>${isSale ? `${quantity} u.` : '—'}</td><td>${isSale ? financeMoney(unitSale) : '—'}</td><td>${isSale ? financeMoney(unitCost) : '—'}</td><td>${financeMoney(entry.amount)}</td><td>${isSale ? financeMoney(entry.cost_amount) : '—'}</td><td><button class="finance-delete" type="button" data-finance-delete="${escapeHtml(entry.id)}" aria-label="Eliminar movimiento">Eliminar</button></td></tr>`;
-  }).join('') || '<tr><td colspan="10">Aún no hay movimientos financieros.</td></tr>';
+    const product = entry.product_id ? products.find(item => String(item.id) === String(entry.product_id)) : null;
+    return `<tr><td>${financeDate(entry.created_at)}</td><td>${escapeHtml(product?.name || 'Venta general')}</td><td>${quantity} u.</td><td>${financeMoney(Number(entry.amount || 0) / quantity)}</td><td>${financeMoney(entry.amount)}</td><td><button class="finance-delete" type="button" data-finance-delete="${escapeHtml(entry.id)}" aria-label="Eliminar venta">Eliminar</button></td></tr>`;
+  }).join('') || '<tr><td colspan="6">Aún no hay ventas confirmadas.</td></tr>';
+  const costRows = [
+    ...salesEntries.filter(entry => Number(entry.cost_amount || 0) > 0).map(entry => {
+      const quantity = Math.max(1, Number(entry.quantity || 1));
+      const product = entry.product_id ? products.find(item => String(item.id) === String(entry.product_id)) : null;
+      return { date: entry.created_at, html: `<tr><td>${financeDate(entry.created_at)}</td><td>Costo de producto vendido</td><td>${escapeHtml(product?.name || entry.description)}</td><td>${quantity} u.</td><td>${financeMoney(Number(entry.cost_amount || 0) / quantity)}</td><td>${financeMoney(entry.cost_amount)}</td><td><span class="finance-linked">Vinculado a venta</span></td></tr>` };
+    }),
+    ...expenseEntries.map(entry => {
+      const isInventory = entry.category === 'productos';
+      return { date: entry.created_at, html: `<tr><td>${financeDate(entry.created_at)}</td><td>${isInventory ? 'Compra de inventario' : 'Gasto operativo'}</td><td>${escapeHtml(entry.description)}</td><td>—</td><td>—</td><td>${financeMoney(entry.amount)}</td><td><button class="finance-delete" type="button" data-finance-delete="${escapeHtml(entry.id)}" aria-label="Eliminar compra o gasto">Eliminar</button></td></tr>` };
+    })
+  ].sort((a, b) => new Date(b.date) - new Date(a.date));
+  financeExpenseLedger.innerHTML = costRows.map(row => row.html).join('') || '<tr><td colspan="7">Aún no hay costos ni gastos registrados.</td></tr>';
 }
 async function loadFinanceEntries() {
   financeStatus.textContent = 'Cargando movimientos…';
@@ -804,7 +811,7 @@ financePendingWhatsapp.addEventListener('click', event => {
 document.querySelector('#financeSaleForm').addEventListener('submit', event => { event.preventDefault(); submitFinance(event.currentTarget, 'sale'); });
 document.querySelector('#financeExpenseForm').addEventListener('submit', event => { event.preventDefault(); submitFinance(event.currentTarget, 'expense'); });
 document.querySelectorAll('#financeSaleForm, #financeExpenseForm').forEach(form => form.addEventListener('reset', () => setTimeout(setFinanceDateDefaults)));
-financeLedger.addEventListener('click', async event => {
+financeDialog.addEventListener('click', async event => {
   const button = event.target.closest('[data-finance-delete]');
   if (!button || !window.confirm('¿Eliminar este movimiento financiero?')) return;
   button.disabled = true;
