@@ -25,7 +25,7 @@
   </script>
   <title>Administrar productos | YC NICE LADY</title>
   <link rel="icon" type="image/png" href="img/logo-transparent.png?v=20261114-1">
-  <link rel="stylesheet" href="css/admin.css?v=logo-transparent-20261114-1">
+  <link rel="stylesheet" href="css/admin.css?v=admin-login-20261115-1">
 </head>
 <body>
   <header class="admin-header">
@@ -38,11 +38,15 @@
       <p class="eyebrow">Acceso privado</p>
       <h1 id="loginTitle">Administrar productos</h1>
       <form id="loginForm" class="form-stack">
-        <label>Correo electrónico<input type="email" name="email" autocomplete="email" required></label>
-        <label>Contraseña<input type="password" name="password" autocomplete="current-password" required></label>
+        <label for="adminEmail">Correo electrónico<input id="adminEmail" type="email" name="email" autocomplete="email" required></label>
+        <label for="adminPassword">Contraseña</label>
+        <div class="password-field">
+          <input id="adminPassword" type="password" name="password" autocomplete="current-password" required>
+          <button id="toggleAdminPassword" class="password-toggle" type="button" aria-controls="adminPassword" aria-label="Mostrar contraseña" aria-pressed="false">Ver</button>
+        </div>
         <button class="button" type="submit">Ingresar</button>
       </form>
-      <p class="form-message" id="loginMessage" role="status"></p>
+      <p class="form-message" id="loginMessage" role="alert" aria-live="assertive"></p>
     </section>
 
     <section id="adminView" hidden>
@@ -112,6 +116,6 @@
     </dialog>
   </main>
   <script src="js/supabase-config.js"></script>
-  <script src="js/admin.js?v=python-backend-20261115-1"></script>
+  <script src="js/admin.js?v=admin-login-20261115-1"></script>
 </body>
 </html>

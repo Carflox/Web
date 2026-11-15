@@ -7,6 +7,16 @@ const loginView = document.querySelector('#loginView');
 const adminView = document.querySelector('#adminView');
 const loginForm = document.querySelector('#loginForm');
 const loginMessage = document.querySelector('#loginMessage');
+const passwordToggle = document.querySelector('#toggleAdminPassword');
+const passwordInput = loginForm.elements.password;
+passwordToggle.addEventListener('click', () => {
+  const showPassword = passwordInput.type === 'password';
+  passwordInput.type = showPassword ? 'text' : 'password';
+  passwordToggle.textContent = showPassword ? 'Ocultar' : 'Ver';
+  passwordToggle.setAttribute('aria-label', showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña');
+  passwordToggle.setAttribute('aria-pressed', String(showPassword));
+  passwordInput.focus({ preventScroll: true });
+});
 try {
   const emailFromUnsafeLink = sessionStorage.getItem('yc-nice-lady-login-email');
   const cameFromUnsafeLink = sessionStorage.getItem('yc-nice-lady-login-url-warning') === 'true';
@@ -443,8 +453,8 @@ loginForm.addEventListener('submit', async (event) => {
   } catch (error) {
     clearSession();
     setMessage(loginMessage, error.message === 'Invalid login credentials'
-      ? 'El correo o la contraseña no coinciden con ADMIN_EMAIL y ADMIN_PASSWORD del servidor. En local revisa el archivo .env y reinicia Python; la contraseña de Supabase Auth no se usa.'
-      : `No se pudo iniciar sesión: ${error.message}`, true);
+      ? 'Correo o contraseña incorrectos. Verifica los datos de acceso configurados en el servidor.'
+      : `No se pudo iniciar sesión. Revisa la conexión e inténtalo de nuevo. (${error.message})`, true);
   }
 });
 
@@ -770,7 +780,7 @@ financeDialog.addEventListener('click', event => { if (event.target === financeD
 financeSaleProduct.addEventListener('change', () => syncFinanceSaleFields({ useCurrentPrices: true }));
 document.querySelector('#financeSaleForm').elements.quantity.addEventListener('input', () => syncFinanceSaleFields());
 document.querySelector('#financeSaleForm').elements.unit_price.addEventListener('input', () => syncFinanceSaleFields());
-financePendingWhatsapp.addEventListener('click', event => {
+financePendingWhatsapp.addEventListener('click', async event => {
   const dismissButton = event.target.closest('[data-whatsapp-dismiss]');
   if (dismissButton) {
     dismissButton.disabled = true;
