@@ -488,7 +488,11 @@ class SiteHandler(SimpleHTTPRequestHandler):
         if bucket != expected_bucket or not base_url or not service_key:
             return self.send_json(503, {"message": "Configura en el servidor la URL, el bucket y la clave privada de Storage de Supabase."})
         target = f"{base_url}/storage/v1/object/{quote(bucket, safe='')}/{quote(image_path, safe='/')}"
-        headers = {"apikey": service_key, "Authorization": f"Bearer {service_key}"}
+        headers = {"apikey": service_key}
+        # New Supabase sb_secret_* keys are API keys, not JWTs. Only the legacy
+        # service_role key (JWT format) belongs in Authorization: Bearer.
+        if service_key.startswith("eyJ"):
+            headers["Authorization"] = f"Bearer {service_key}"
         if method == "POST":
             size = int(self.headers.get("Content-Length", "0") or 0)
             if size < 1 or size > 5 * 1024 * 1024:
