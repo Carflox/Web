@@ -1,7 +1,8 @@
 const config = window.YCNiceLadyConfig || {};
 const { productsBucket: PRODUCTS_BUCKET, publishableKey: SUPABASE_PUBLISHABLE_KEY, supabaseUrl: SUPABASE_URL } = config;
 const storeIsConfigured = Boolean(SUPABASE_URL && SUPABASE_PUBLISHABLE_KEY && PRODUCTS_BUCKET);
-const sessionStorageKey = 'yc-nice-lady-admin-session';
+// Fuerza nueva autenticación tras recrear el usuario de Supabase; evita reutilizar tokens del usuario eliminado.
+const sessionStorageKey = 'yc-nice-lady-admin-session-v2';
 
 const loginView = document.querySelector('#loginView');
 const adminView = document.querySelector('#adminView');
