@@ -7,6 +7,19 @@ const loginView = document.querySelector('#loginView');
 const adminView = document.querySelector('#adminView');
 const loginForm = document.querySelector('#loginForm');
 const loginMessage = document.querySelector('#loginMessage');
+try {
+  const emailFromUnsafeLink = sessionStorage.getItem('yc-nice-lady-login-email');
+  const cameFromUnsafeLink = sessionStorage.getItem('yc-nice-lady-login-url-warning') === 'true';
+  if (emailFromUnsafeLink) {
+    loginForm.elements.email.value = emailFromUnsafeLink;
+    sessionStorage.removeItem('yc-nice-lady-login-email');
+    loginForm.elements.password.focus();
+  }
+  if (cameFromUnsafeLink) {
+    sessionStorage.removeItem('yc-nice-lady-login-url-warning');
+    setMessage(loginMessage, 'Por seguridad, eliminé la contraseña del enlace. Escribe tu contraseña actualizada en este formulario y pulsa Ingresar.');
+  }
+} catch { /* El inicio de sesión sigue funcionando manualmente. */ }
 const productForm = document.querySelector('#productForm');
 const productMessage = document.querySelector('#productMessage');
 const productList = document.querySelector('#adminProducts');

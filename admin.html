@@ -4,6 +4,24 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="robots" content="noindex, nofollow">
+  <meta name="referrer" content="no-referrer">
+  <script>
+    (() => {
+      const url = new URL(window.location.href);
+      const email = url.searchParams.get('email');
+      const hadPassword = url.searchParams.has('password');
+      if (!email && !hadPassword) return;
+
+      url.searchParams.delete('email');
+      url.searchParams.delete('password');
+      window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`);
+
+      try {
+        if (email) sessionStorage.setItem('yc-nice-lady-login-email', email);
+        sessionStorage.setItem('yc-nice-lady-login-url-warning', 'true');
+      } catch { /* El formulario sigue disponible si el navegador bloquea el almacenamiento. */ }
+    })();
+  </script>
   <title>Administrar productos | YC NICE LADY</title>
   <link rel="icon" type="image/png" href="img/logo-transparent.png?v=20261114-1">
   <link rel="stylesheet" href="css/admin.css?v=logo-transparent-20261114-1">
@@ -94,6 +112,6 @@
     </dialog>
   </main>
   <script src="js/supabase-config.js"></script>
-  <script src="js/admin.js?v=finance-local-admin-storage-20261115-6"></script>
+  <script src="js/admin.js?v=admin-login-url-safety-20261115-1"></script>
 </body>
 </html>
