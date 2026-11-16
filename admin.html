@@ -25,7 +25,7 @@
   </script>
   <title>Administrar productos | YC NICE LADY</title>
   <link rel="icon" type="image/png" href="img/logo-transparent.png?v=20261114-1">
-  <link rel="stylesheet" href="css/admin.css?v=admin-login-20261115-1">
+  <link rel="stylesheet" href="css/admin.css?v=admin-reset-20261115-1">
 </head>
 <body>
   <header class="admin-header">
@@ -47,6 +47,23 @@
         <button class="button" type="submit">Ingresar</button>
       </form>
       <p class="form-message" id="loginMessage" role="alert" aria-live="assertive"></p>
+      <button class="text-button" id="showPasswordReset" type="button">Olvidé mi contraseña</button>
+      <section id="passwordResetView" class="password-reset" hidden aria-labelledby="passwordResetTitle">
+        <h2 id="passwordResetTitle">Recuperar acceso</h2>
+        <p>Te enviaremos un código de un solo uso al correo administrador.</p>
+        <form id="resetRequestForm" class="form-stack">
+          <label for="resetEmail">Correo administrador<input id="resetEmail" type="email" autocomplete="email" required></label>
+          <button class="button" type="submit">Enviar código por Gmail</button>
+        </form>
+        <form id="resetConfirmForm" class="form-stack" hidden>
+          <label for="resetCode">Código de 6 dígitos<input id="resetCode" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" required></label>
+          <label for="newAdminPassword">Nueva contraseña (mínimo 12 caracteres)<input id="newAdminPassword" type="password" minlength="12" maxlength="256" autocomplete="new-password" required></label>
+          <label for="confirmAdminPassword">Repite la nueva contraseña<input id="confirmAdminPassword" type="password" minlength="12" maxlength="256" autocomplete="new-password" required></label>
+          <button class="button" type="submit">Cambiar contraseña</button>
+        </form>
+        <p class="form-message" id="resetMessage" role="status" aria-live="polite"></p>
+        <button class="text-button" id="backToLogin" type="button">Volver al inicio de sesión</button>
+      </section>
     </section>
 
     <section id="adminView" hidden>
@@ -116,6 +133,6 @@
     </dialog>
   </main>
   <script src="js/supabase-config.js"></script>
-  <script src="js/admin.js?v=admin-login-20261115-1"></script>
+  <script src="js/admin.js?v=admin-reset-20261115-1"></script>
 </body>
 </html>

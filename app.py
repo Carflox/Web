@@ -8,11 +8,14 @@ import html
 import json
 import os
 import secrets
+import smtplib
+import ssl
 import sqlite3
 import time
 import threading
 import webbrowser
 from contextlib import contextmanager
+from email.message import EmailMessage
 from http.cookies import SimpleCookie
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path, PurePosixPath
@@ -56,6 +59,10 @@ DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 SESSION_SECRET = os.environ.get("SESSION_SECRET", "")
 SESSION_COOKIE = "yc_nice_lady_session"
 SESSION_TTL = 60 * 60 * 24 * 14
+PASSWORD_RESET_TTL = 10 * 60
+PASSWORD_RESET_COOLDOWN = 60
+PASSWORD_RESET_MAX_ATTEMPTS = 5
+PASSWORD_HASH_ITERATIONS = 310_000
 
 
 @contextmanager
@@ -99,10 +106,76 @@ def initialize_db():
             CREATE TABLE IF NOT EXISTS dismissed_whatsapp (
                 event_id TEXT PRIMARY KEY, created_at TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS admin_credentials (
+                id INTEGER PRIMARY KEY CHECK (id = 1), salt TEXT NOT NULL,
+                password_hash TEXT NOT NULL, updated_at INTEGER NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS admin_password_resets (
+                id INTEGER PRIMARY KEY CHECK (id = 1), email TEXT NOT NULL,
+                code_hash TEXT NOT NULL, expires_at INTEGER NOT NULL,
+                requested_at INTEGER NOT NULL, attempts INTEGER NOT NULL DEFAULT 0
+            );
         """)
 
 
 initialize_db()
+
+
+def current_admin_password():
+    """Prefer a password reset stored in SQLite, falling back to environment setup."""
+    with db() as conn:
+        saved = conn.execute(
+            "SELECT salt, password_hash FROM admin_credentials WHERE id=1"
+        ).fetchone()
+    if saved:
+        return ("pbkdf2", saved["salt"], saved["password_hash"])
+    return ("plain", "", os.environ.get("ADMIN_PASSWORD", ""))
+
+
+def verify_admin_password(candidate):
+    mode, salt, expected = current_admin_password()
+    if not expected:
+        return False
+    if mode == "plain":
+        return hmac.compare_digest(candidate, expected)
+    actual = hashlib.pbkdf2_hmac(
+        "sha256", candidate.encode("utf-8"), bytes.fromhex(salt), PASSWORD_HASH_ITERATIONS
+    ).hex()
+    return hmac.compare_digest(actual, expected)
+
+
+def send_password_reset_email(email, code):
+    smtp_user = os.environ.get("SMTP_USER", "").strip()
+    smtp_password = os.environ.get("SMTP_APP_PASSWORD", "").replace(" ", "")
+    if not smtp_user or not smtp_password:
+        raise RuntimeError("Falta configurar SMTP_USER y SMTP_APP_PASSWORD.")
+
+    message = EmailMessage()
+    message["Subject"] = "Código para cambiar tu contraseña | YC NICE LADY"
+    message["From"] = os.environ.get("SMTP_FROM", smtp_user).strip()
+    message["To"] = email
+    message.set_content(
+        f"Tu código para cambiar la contraseña del panel YC NICE LADY es: {code}\n\n"
+        "El código vence en 10 minutos y solo se puede usar una vez. "
+        "Si no solicitaste este cambio, ignora este correo."
+    )
+
+    host = os.environ.get("SMTP_HOST", "smtp.gmail.com").strip()
+    port = int(os.environ.get("SMTP_PORT", "587"))
+    with smtplib.SMTP(host, port, timeout=20) as server:
+        server.ehlo()
+        server.starttls(context=ssl.create_default_context())
+        server.ehlo()
+        server.login(smtp_user, smtp_password)
+        server.send_message(message)
+
+
+def hash_password(password):
+    salt = secrets.token_bytes(16)
+    digest = hashlib.pbkdf2_hmac(
+        "sha256", password.encode("utf-8"), salt, PASSWORD_HASH_ITERATIONS
+    ).hex()
+    return salt.hex(), digest
 
 
 def now_iso():
@@ -111,7 +184,10 @@ def now_iso():
 
 def make_session(email):
     expires = int(time.time()) + SESSION_TTL
-    payload = f"{email.lower()}:{expires}"
+    with db() as conn:
+        credential = conn.execute("SELECT updated_at FROM admin_credentials WHERE id=1").fetchone()
+    credential_version = int(credential["updated_at"]) if credential else 0
+    payload = f"{email.lower()}:{expires}:{credential_version}"
     signature = hmac.new(SESSION_SECRET.encode(), payload.encode(), hashlib.sha256).hexdigest()
     return f"{payload}:{signature}"
 
@@ -120,10 +196,25 @@ def valid_session(token):
     if not token or not SESSION_SECRET:
         return False
     try:
-        email, expires_text, signature = token.rsplit(":", 2)
-        payload = f"{email}:{expires_text}"
+        parts = token.rsplit(":", 3)
+        if len(parts) == 4:
+            email, expires_text, credential_version, signature = parts
+        else:
+            # Sessions issued before a password reset are valid only before the first reset.
+            email, expires_text, signature = token.rsplit(":", 2)
+            credential_version = "0"
+        payload = f"{email}:{expires_text}:{credential_version}"
         expected = hmac.new(SESSION_SECRET.encode(), payload.encode(), hashlib.sha256).hexdigest()
-        return (hmac.compare_digest(signature, expected)
+        if len(parts) != 4:
+            legacy_payload = f"{email}:{expires_text}"
+            legacy_signature = hmac.new(SESSION_SECRET.encode(), legacy_payload.encode(), hashlib.sha256).hexdigest()
+            signature_valid = hmac.compare_digest(signature, legacy_signature)
+        else:
+            signature_valid = hmac.compare_digest(signature, expected)
+        with db() as conn:
+            credential = conn.execute("SELECT updated_at FROM admin_credentials WHERE id=1").fetchone()
+        current_version = str(int(credential["updated_at"])) if credential else "0"
+        return (signature_valid and credential_version == current_version
                 and int(expires_text) > int(time.time())
                 and email.lower() == os.environ.get("ADMIN_EMAIL", "").lower())
     except (ValueError, TypeError):
@@ -339,14 +430,82 @@ class SiteHandler(SimpleHTTPRequestHandler):
             data = self.body_json()
         except ValueError as error:
             return self.send_json(400, {"message": str(error)})
+        if path == "/api/password-reset/request":
+            email = str(data.get("email", "")).strip().lower()
+            expected_email = os.environ.get("ADMIN_EMAIL", "").strip().lower()
+            if not SESSION_SECRET or not expected_email:
+                return self.send_json(503, {"message": "La recuperación de contraseña no está configurada en el servidor."})
+            # Return the same response for unknown emails to avoid disclosing the admin account.
+            generic = {"message": "Si el correo coincide con la cuenta administradora, recibirás un código."}
+            if not hmac.compare_digest(email, expected_email):
+                return self.send_json(200, generic)
+            now = int(time.time())
+            with db() as conn:
+                previous = conn.execute(
+                    "SELECT requested_at FROM admin_password_resets WHERE id=1"
+                ).fetchone()
+            if previous and now - int(previous["requested_at"]) < PASSWORD_RESET_COOLDOWN:
+                return self.send_json(429, {"message": "Espera un minuto antes de solicitar otro código."})
+            code = f"{secrets.randbelow(1_000_000):06d}"
+            code_hash = hmac.new(SESSION_SECRET.encode(), code.encode(), hashlib.sha256).hexdigest()
+            try:
+                send_password_reset_email(expected_email, code)
+            except (OSError, smtplib.SMTPException, RuntimeError, ValueError) as error:
+                print(f"No se pudo enviar el correo de recuperación ({type(error).__name__}).")
+                return self.send_json(503, {"message": "No se pudo enviar el código. Revisa la configuración SMTP de Gmail en el servidor."})
+            with db() as conn:
+                conn.execute("""INSERT INTO admin_password_resets
+                    (id,email,code_hash,expires_at,requested_at,attempts)
+                    VALUES (1,?,?,?,?,0)
+                    ON CONFLICT(id) DO UPDATE SET email=excluded.email,
+                    code_hash=excluded.code_hash,expires_at=excluded.expires_at,
+                    requested_at=excluded.requested_at,attempts=0""",
+                    (expected_email, code_hash, now + PASSWORD_RESET_TTL, now))
+            return self.send_json(200, generic)
+        if path == "/api/password-reset/confirm":
+            email = str(data.get("email", "")).strip().lower()
+            code = str(data.get("code", "")).strip()
+            password = str(data.get("password", ""))
+            expected_email = os.environ.get("ADMIN_EMAIL", "").strip().lower()
+            if not hmac.compare_digest(email, expected_email) or not code.isdigit() or len(code) != 6:
+                return self.send_json(400, {"message": "El código no es válido o ya venció."})
+            if len(password) < 12 or len(password) > 256:
+                return self.send_json(400, {"message": "La nueva contraseña debe tener entre 12 y 256 caracteres."})
+            now = int(time.time())
+            with db() as conn:
+                reset = conn.execute("SELECT * FROM admin_password_resets WHERE id=1").fetchone()
+                if (not reset or reset["email"] != expected_email
+                        or int(reset["expires_at"]) < now
+                        or int(reset["attempts"]) >= PASSWORD_RESET_MAX_ATTEMPTS):
+                    if reset and (int(reset["expires_at"]) < now or int(reset["attempts"]) >= PASSWORD_RESET_MAX_ATTEMPTS):
+                        conn.execute("DELETE FROM admin_password_resets WHERE id=1")
+                    return self.send_json(400, {"message": "El código no es válido o ya venció. Solicita uno nuevo."})
+                candidate_hash = hmac.new(SESSION_SECRET.encode(), code.encode(), hashlib.sha256).hexdigest()
+                if not hmac.compare_digest(candidate_hash, reset["code_hash"]):
+                    attempts = int(reset["attempts"]) + 1
+                    if attempts >= PASSWORD_RESET_MAX_ATTEMPTS:
+                        conn.execute("DELETE FROM admin_password_resets WHERE id=1")
+                    else:
+                        conn.execute("UPDATE admin_password_resets SET attempts=? WHERE id=1", (attempts,))
+                    return self.send_json(400, {"message": "El código no es válido o ya venció. Revisa el correo e inténtalo de nuevo."})
+                salt, password_hash = hash_password(password)
+                previous_credential = conn.execute(
+                    "SELECT updated_at FROM admin_credentials WHERE id=1"
+                ).fetchone()
+                credential_updated_at = max(now, int(previous_credential["updated_at"]) + 1) if previous_credential else now
+                conn.execute("""INSERT INTO admin_credentials (id,salt,password_hash,updated_at)
+                    VALUES (1,?,?,?) ON CONFLICT(id) DO UPDATE SET salt=excluded.salt,
+                    password_hash=excluded.password_hash,updated_at=excluded.updated_at""",
+                    (salt, password_hash, credential_updated_at))
+                conn.execute("DELETE FROM admin_password_resets WHERE id=1")
+            return self.send_json(200, {"message": "Contraseña actualizada. Ya puedes iniciar sesión con la nueva contraseña."})
         if path == "/auth/v1/token":
             email = str(data.get("email", "")).strip().lower()
             password = str(data.get("password", ""))
             expected_email = os.environ.get("ADMIN_EMAIL", "").strip().lower()
-            expected_password = os.environ.get("ADMIN_PASSWORD", "")
-            if not SESSION_SECRET or not expected_email or not expected_password:
+            if not SESSION_SECRET or not expected_email or not current_admin_password()[2]:
                 return self.send_json(503, {"message": "Configura ADMIN_EMAIL, ADMIN_PASSWORD y SESSION_SECRET en .env o Render."})
-            if not hmac.compare_digest(email, expected_email) or not hmac.compare_digest(password, expected_password):
+            if not hmac.compare_digest(email, expected_email) or not verify_admin_password(password):
                 return self.send_json(400, {"message": "Invalid login credentials"})
             token = make_session(email)
             is_https = (self.headers.get("X-Forwarded-Proto", "").lower() == "https"

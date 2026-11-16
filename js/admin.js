@@ -7,6 +7,10 @@ const loginView = document.querySelector('#loginView');
 const adminView = document.querySelector('#adminView');
 const loginForm = document.querySelector('#loginForm');
 const loginMessage = document.querySelector('#loginMessage');
+const passwordResetView = document.querySelector('#passwordResetView');
+const resetRequestForm = document.querySelector('#resetRequestForm');
+const resetConfirmForm = document.querySelector('#resetConfirmForm');
+const resetMessage = document.querySelector('#resetMessage');
 const passwordToggle = document.querySelector('#toggleAdminPassword');
 const passwordInput = loginForm.elements.password;
 passwordToggle.addEventListener('click', () => {
@@ -455,6 +459,76 @@ loginForm.addEventListener('submit', async (event) => {
     setMessage(loginMessage, error.message === 'Invalid login credentials'
       ? 'Correo o contraseña incorrectos. Verifica los datos de acceso configurados en el servidor.'
       : `No se pudo iniciar sesión. Revisa la conexión e inténtalo de nuevo. (${error.message})`, true);
+  }
+});
+
+document.querySelector('#showPasswordReset').addEventListener('click', () => {
+  passwordResetView.hidden = false;
+  document.querySelector('#resetEmail').value = loginForm.elements.email.value.trim();
+  document.querySelector('#resetEmail').focus();
+});
+
+document.querySelector('#backToLogin').addEventListener('click', () => {
+  passwordResetView.hidden = true;
+  resetRequestForm.hidden = false;
+  resetConfirmForm.hidden = true;
+  resetRequestForm.reset();
+  resetConfirmForm.reset();
+  setMessage(resetMessage);
+});
+
+resetRequestForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const email = document.querySelector('#resetEmail').value.trim();
+  const button = resetRequestForm.querySelector('button[type="submit"]');
+  button.disabled = true;
+  setMessage(resetMessage, 'Enviando código…');
+  try {
+    const result = await request('/api/password-reset/request', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email })
+    }, { useSession: false });
+    setMessage(resetMessage, result.message || 'Si el correo coincide con la cuenta administradora, recibirás un código.');
+    resetRequestForm.hidden = true;
+    resetConfirmForm.hidden = false;
+    document.querySelector('#resetCode').focus();
+  } catch (error) {
+    setMessage(resetMessage, error.message || 'No se pudo enviar el código. Revisa la configuración de correo del servidor.', true);
+  } finally {
+    button.disabled = false;
+  }
+});
+
+resetConfirmForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const password = document.querySelector('#newAdminPassword').value;
+  const confirmation = document.querySelector('#confirmAdminPassword').value;
+  if (password !== confirmation) {
+    setMessage(resetMessage, 'Las contraseñas no coinciden.', true);
+    return;
+  }
+  const button = resetConfirmForm.querySelector('button[type="submit"]');
+  button.disabled = true;
+  setMessage(resetMessage, 'Actualizando contraseña…');
+  try {
+    const result = await request('/api/password-reset/confirm', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: document.querySelector('#resetEmail').value.trim(),
+        code: document.querySelector('#resetCode').value.trim(), password
+      })
+    }, { useSession: false });
+    loginForm.elements.email.value = document.querySelector('#resetEmail').value.trim();
+    loginForm.elements.password.value = '';
+    resetConfirmForm.reset();
+    resetRequestForm.hidden = false;
+    resetConfirmForm.hidden = true;
+    passwordResetView.hidden = true;
+    setMessage(loginMessage, result.message || 'Contraseña actualizada. Inicia sesión con la nueva contraseña.');
+  } catch (error) {
+    setMessage(resetMessage, error.message || 'No se pudo actualizar la contraseña.', true);
+  } finally {
+    button.disabled = false;
   }
 });
 
