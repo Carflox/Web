@@ -86,7 +86,7 @@ def initialize_db():
             CREATE TABLE IF NOT EXISTS products (
                 id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '',
                 category TEXT NOT NULL DEFAULT 'accesorios', price REAL NOT NULL DEFAULT 0,
-                cost_price REAL NOT NULL DEFAULT 0, stock INTEGER NOT NULL DEFAULT 0,
+                cost_price REAL NOT NULL DEFAULT 0, supplier TEXT, stock INTEGER NOT NULL DEFAULT 0,
                 image_path TEXT, is_active INTEGER NOT NULL DEFAULT 1,
                 sort_order INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL
             );
@@ -116,6 +116,9 @@ def initialize_db():
                 requested_at INTEGER NOT NULL, attempts INTEGER NOT NULL DEFAULT 0
             );
         """)
+        product_columns = {row["name"] for row in conn.execute("PRAGMA table_info(products)").fetchall()}
+        if "supplier" not in product_columns:
+            conn.execute("ALTER TABLE products ADD COLUMN supplier TEXT")
 
 
 initialize_db()
@@ -400,6 +403,7 @@ class SiteHandler(SimpleHTTPRequestHandler):
             row["is_active"] = bool(row["is_active"])
             if not self.is_admin():
                 row.pop("cost_price", None)
+                row.pop("supplier", None)
                 row.pop("sort_order", None)
         return self.send_json(200, rows)
 
@@ -525,15 +529,16 @@ class SiteHandler(SimpleHTTPRequestHandler):
                     if not item.get("id") or not item.get("name"):
                         return self.send_json(400, {"message": "Falta el identificador o nombre del producto."})
                     conn.execute("""INSERT INTO products
-                      (id,name,description,category,price,cost_price,stock,image_path,is_active,sort_order,created_at)
-                      VALUES (?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET
+                      (id,name,description,category,price,cost_price,supplier,stock,image_path,is_active,sort_order,created_at)
+                      VALUES (?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET
                       name=excluded.name,description=excluded.description,category=excluded.category,
-                      price=excluded.price,cost_price=excluded.cost_price,stock=excluded.stock,
+                      price=excluded.price,cost_price=excluded.cost_price,supplier=excluded.supplier,stock=excluded.stock,
                       image_path=excluded.image_path,is_active=excluded.is_active,
                       sort_order=excluded.sort_order""", (
                         str(item["id"]), str(item["name"]), str(item.get("description") or ""),
                         str(item.get("category") or "accesorios"), float(item.get("price") or 0),
-                        float(item.get("cost_price") or 0), int(item.get("stock") or 0),
+                        float(item.get("cost_price") or 0), str(item.get("supplier") or "").strip() or None,
+                        int(item.get("stock") or 0),
                         item.get("image_path"), int(bool(item.get("is_active", True))),
                         int(item.get("sort_order") or 0), item.get("created_at") or now_iso()))
             return self.send_json(201, {"ok": True})

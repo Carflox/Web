@@ -140,7 +140,7 @@ function resetProductForm() {
 
 function renderProducts() {
   const query = normalizeSearchText(adminProductSearch.value);
-  const visibleProducts = products.filter((product) => !query || normalizeSearchText(`${product.name} ${product.description || ''} ${categoryLabel(product.category)} ${product.category || ''}`).includes(query));
+  const visibleProducts = products.filter((product) => !query || normalizeSearchText(`${product.name} ${product.description || ''} ${product.supplier || ''} ${categoryLabel(product.category)} ${product.category || ''}`).includes(query));
   summary.textContent = query
     ? `${visibleProducts.length} de ${products.length} productos encontrados`
     : `${products.length} producto${products.length === 1 ? '' : 's'} en total`;
@@ -165,7 +165,7 @@ function renderProducts() {
         <div>
           <h3>${escapeHtml(product.name)}</h3>
           <p>${escapeHtml(product.description || 'Sin descripción')}</p>
-          <div class="admin-product-meta"><span>Venta ${formatMoney(product.price)}</span><span>Costo ${formatMoney(product.cost_price)}</span><span>Margen ${formatMoney(Number(product.price)-Number(product.cost_price||0))}</span><span>Stock: ${product.stock}</span><span>${categoryLabel(product.category)}</span><span class="visibility ${product.is_active ? '' : 'hidden'}">${product.is_active ? 'Visible' : 'Oculto'}</span></div>
+          <div class="admin-product-meta"><span>Venta ${formatMoney(product.price)}</span><span>Costo ${formatMoney(product.cost_price)}</span><span>Margen ${formatMoney(Number(product.price)-Number(product.cost_price||0))}</span><span>Stock: ${product.stock}</span><span>${categoryLabel(product.category)}</span>${product.supplier ? `<span>Proveedor: ${escapeHtml(product.supplier)}</span>` : ''}<span class="visibility ${product.is_active ? '' : 'hidden'}">${product.is_active ? 'Visible' : 'Oculto'}</span></div>
         </div>
         <div class="row-actions">
           <button type="button" data-action="edit" data-product-id="${product.id}">Editar</button>
@@ -203,6 +203,7 @@ function editProduct(product) {
   productForm.elements.name.value = product.name;
   productForm.elements.description.value = product.description || '';
   productForm.elements.category.value = product.category || 'accesorios';
+  productForm.elements.supplier.value = product.supplier || '';
   productForm.elements.price.value = product.price;
   productForm.elements.cost_price.value = Number(product.cost_price || 0);
   productForm.elements.stock.value = product.stock;
@@ -337,6 +338,7 @@ async function saveProduct(event) {
   const name = form.get('name').trim();
   const description = form.get('description').trim();
   const category = form.get('category');
+  const supplier = String(form.get('supplier') || '').trim();
   const price = Number(form.get('price'));
   const costPrice = Number(form.get('cost_price'));
   const stock = Number(form.get('stock'));
@@ -376,7 +378,7 @@ async function saveProduct(event) {
     }
 
     const productData = {
-      id, name, description, category, price, cost_price: costPrice, stock, image_path: imagePath,
+      id, name, description, category, supplier: supplier || null, price, cost_price: costPrice, stock, image_path: imagePath,
       is_active: form.get('isActive') === 'on'
     };
     if (!currentId) {
@@ -667,6 +669,8 @@ const financeTotals = document.querySelector('#financeTotals');
 const financeSalesLedger = document.querySelector('#financeSalesLedger');
 const financeExpenseLedger = document.querySelector('#financeExpenseLedger');
 const financeSupplierChart = document.querySelector('#financeSupplierChart');
+const financeExpenseProduct = document.querySelector('#financeExpenseProduct');
+const financeInventoryProductWrap = document.querySelector('#financeInventoryProductWrap');
 const financePendingWhatsapp = document.querySelector('#financePendingWhatsapp');
 const financePendingStatus = document.querySelector('#financePendingStatus');
 const financeCategoryLabels = { sale: 'Venta', delivery: 'Delivery pagado', gasolina: 'Gasolina', material_moto: 'Materiales de moto', productos: 'Compra de inventario', empaque: 'Empaques', otros: 'Otros gastos' };
@@ -719,6 +723,14 @@ function refreshFinanceSaleProducts() {
   financeSaleProduct.innerHTML = '<option value="">Venta general</option>' + products.map(product => `<option value="${escapeHtml(product.id)}">${escapeHtml(product.name)} · ${financeMoney(product.price)}</option>`).join('');
   if (products.some(product => String(product.id) === selected)) financeSaleProduct.value = selected;
 }
+function refreshFinanceExpenseProducts() {
+  const selected = financeExpenseProduct.value;
+  financeExpenseProduct.innerHTML = '<option value="">Compra general / varios</option>' + products.map(product => {
+    const suffix = product.supplier ? ` · ${product.supplier}` : '';
+    return `<option value="${escapeHtml(product.id)}">${escapeHtml(product.name)}${escapeHtml(suffix)}</option>`;
+  }).join('');
+  if (products.some(product => String(product.id) === selected)) financeExpenseProduct.value = selected;
+}
 function syncFinanceSaleFields({ useCurrentPrices = false } = {}) {
   const form = document.querySelector('#financeSaleForm');
   const product = products.find(item => String(item.id) === financeSaleProduct.value);
@@ -762,8 +774,9 @@ function paintFinance(entries) {
   }).join('') || '<tr><td colspan="6">Aún no hay ventas confirmadas.</td></tr>';
   financeExpenseLedger.innerHTML = expenseEntries.map(entry => {
     const isInventory = entry.category === 'productos';
-    return `<tr><td>${financeDate(entry.created_at)}</td><td>${isInventory ? 'Compra a proveedor' : 'Gasto operativo'}</td><td>${escapeHtml(entry.supplier || '—')}</td><td>${escapeHtml(entry.description)}</td><td>${financeMoney(entry.amount)}</td><td><button class="finance-delete" type="button" data-finance-delete="${escapeHtml(entry.id)}" aria-label="Eliminar costo o gasto">Eliminar</button></td></tr>`;
-  }).join('') || '<tr><td colspan="6">Aún no hay costos ni gastos registrados.</td></tr>';
+    const purchasedProduct = entry.product_id ? products.find(product => String(product.id) === String(entry.product_id)) : null;
+    return `<tr><td>${financeDate(entry.created_at)}</td><td>${isInventory ? 'Compra a proveedor' : 'Gasto operativo'}</td><td>${escapeHtml(purchasedProduct?.name || '—')}</td><td>${escapeHtml(entry.supplier || '—')}</td><td>${escapeHtml(entry.description)}</td><td>${financeMoney(entry.amount)}</td><td><button class="finance-delete" type="button" data-finance-delete="${escapeHtml(entry.id)}" aria-label="Eliminar costo o gasto">Eliminar</button></td></tr>`;
+  }).join('') || '<tr><td colspan="7">Aún no hay costos ni gastos registrados.</td></tr>';
 }
 async function loadFinanceEntries() {
   const [all] = await Promise.all([request('/api/finance'), loadDismissedWhatsappIds()]);
@@ -813,7 +826,9 @@ async function submitFinance(form, entryType) {
     const analyticsEventId = String(data.get('analytics_event_id') || '');
     if (analyticsEventId) payload.analytics_event_id = analyticsEventId;
   } else {
-    payload = { entry_type: 'expense', category: String(data.get('category')), description, supplier: String(data.get('supplier') || '').trim() || null, amount, created_at: createdAt.toISOString() };
+    const category = String(data.get('category'));
+    const productId = category === 'productos' ? String(data.get('product_id') || '') : '';
+    payload = { entry_type: 'expense', category, description, supplier: String(data.get('supplier') || '').trim() || null, product_id: products.some(product => String(product.id) === productId) ? productId : null, amount, created_at: createdAt.toISOString() };
   }
   const button = form.querySelector('button[type="submit"]');
   button.disabled = true;
@@ -846,6 +861,8 @@ async function submitFinance(form, entryType) {
 document.querySelector('#openFinance').addEventListener('click', () => {
   financeDialog.showModal();
   refreshFinanceSaleProducts();
+  refreshFinanceExpenseProducts();
+  syncFinanceSupplierRequired();
   setFinanceDateDefaults();
   loadFinanceEntries();
 });
@@ -890,8 +907,17 @@ financePendingWhatsapp.addEventListener('click', async event => {
 document.querySelector('#financeSaleForm').addEventListener('submit', event => { event.preventDefault(); submitFinance(event.currentTarget, 'sale'); });
 document.querySelector('#financeExpenseForm').addEventListener('submit', event => { event.preventDefault(); submitFinance(event.currentTarget, 'expense'); });
 const financeExpenseForm = document.querySelector('#financeExpenseForm');
-function syncFinanceSupplierRequired() { financeExpenseForm.elements.supplier.required = financeExpenseForm.elements.category.value === 'productos'; }
-financeExpenseForm.elements.category.addEventListener('change', syncFinanceSupplierRequired);
+function syncFinanceSupplierRequired({ loadProductSupplier = false } = {}) {
+  const isInventoryPurchase = financeExpenseForm.elements.category.value === 'productos';
+  financeInventoryProductWrap.hidden = !isInventoryPurchase;
+  financeExpenseForm.elements.supplier.required = isInventoryPurchase;
+  if (loadProductSupplier) {
+    const product = products.find(item => String(item.id) === financeExpenseProduct.value);
+    financeExpenseForm.elements.supplier.value = product?.supplier || '';
+  }
+}
+financeExpenseForm.elements.category.addEventListener('change', () => syncFinanceSupplierRequired());
+financeExpenseProduct.addEventListener('change', () => syncFinanceSupplierRequired({ loadProductSupplier: true }));
 syncFinanceSupplierRequired();
 document.querySelectorAll('#financeSaleForm, #financeExpenseForm').forEach(form => form.addEventListener('reset', () => setTimeout(() => { setFinanceDateDefaults(); syncFinanceSupplierRequired(); })));
 financeDialog.addEventListener('click', async event => {
