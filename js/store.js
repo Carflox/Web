@@ -279,7 +279,7 @@ async function loadProducts({ loading = true } = {}) {
     if (loadCachedCatalog()) return false;
     showCatalogueProblem(
       'No pudimos conectar con el catálogo.',
-      'Para usar la tienda sin conexión, primero debes abrirla una vez con internet en este dispositivo. Luego vuelve a intentarlo.'
+      'No se pudo consultar el catálogo. Comprueba la configuración de Netlify y vuelve a intentarlo.'
     );
     return false;
   }

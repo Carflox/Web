@@ -2,28 +2,13 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "Iniciar sitio y panel (Python)",
-      "type": "process",
-      "command": "${command:python.interpreterPath}",
-      "args": ["app.py"],
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
+      "label": "Iniciar sitio y funciones (Netlify)",
+      "type": "shell",
+      "command": "npx netlify dev",
+      "options": { "cwd": "${workspaceFolder}" },
       "isBackground": true,
-      "problemMatcher": {
-        "owner": "custom",
-        "pattern": [{ "regexp": ".*" }],
-        "background": {
-          "activeOnStart": true,
-          "beginsPattern": "YC NICE LADY escuchando en el puerto",
-          "endsPattern": "YC NICE LADY escuchando en el puerto"
-        }
-      },
-      "presentation": {
-        "reveal": "always",
-        "panel": "dedicated",
-        "clear": false
-      }
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": false }
     }
   ]
 }

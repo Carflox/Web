@@ -77,18 +77,21 @@ y guardar la fotografía dentro de la carpeta `img`.
 
 Los números de WhatsApp, Instagram, precios y datos de pago son datos de ejemplo y deben reemplazarse por los datos reales antes de publicar la página.
 
-## Servidor Python y datos del negocio
+## Publicación en Netlify
 
-El servicio `app.py` ejecuta el catálogo, el acceso privado, las estadísticas, los pedidos pendientes y las finanzas en Python con SQLite. Supabase queda para servir, subir y eliminar fotografías. La clave privada de Storage (`SUPABASE_SERVICE_ROLE_KEY`) solo se usa dentro de Python; nunca debe ponerse en archivos JavaScript ni subirse a GitHub.
+El sitio público y su backend se despliegan juntos en Netlify. Netlify Functions ejecuta las rutas del catálogo, pedidos, panel, imágenes, finanzas y autenticación en Node.js. El proyecto se ejecuta en Netlify Functions. Para vista previa local, usa Node.js 24 o posterior y ejecuta `npx netlify dev` (también está disponible como tarea de VS Code).
 
-Los enlaces compartibles de productos usan `/f/<id>` y generan la vista previa social desde Python/SQLite. Las imágenes de esa vista previa se sirven desde el bucket público de Supabase Storage; no se consulta la tabla de productos de Supabase.
+La base de datos y el almacenamiento de imágenes siguen en el proyecto Supabase ya configurado. Las claves privadas se agregan en Netlify bajo **Site configuration > Environment variables**, con ámbito **Functions**; nunca se escriben en `js/supabase-config.js` ni se suben a GitHub.
 
-Para iniciar localmente, completa `.env` con `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `SESSION_SECRET`, `SUPABASE_SERVICE_ROLE_KEY` y la URL y bucket de Supabase. Para recuperar la contraseña por Gmail, configura también `SMTP_USER` y `SMTP_APP_PASSWORD` en ese `.env`. `.env.example` muestra los nombres. Ejecuta `python app.py` o la tarea **Iniciar sitio y panel (Python)** de VS Code. El servidor abre la tienda y el panel en el navegador desde el puerto 3001; si está ocupado, usará el siguiente puerto libre y lo indicará en la terminal. Mantén esa terminal abierta mientras uses el panel.
+### Preparar el proyecto
 
-En Render, configura `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `SESSION_SECRET`, `SUPABASE_URL`, `SUPABASE_PRODUCTS_BUCKET` y `SUPABASE_SERVICE_ROLE_KEY` en **Environment**. Para activar «Olvidé mi contraseña», añade también `SMTP_USER` (tu Gmail) y `SMTP_APP_PASSWORD` (una contraseña de aplicación de Gmail; requiere verificación en dos pasos). No uses ni compartas tu contraseña normal de Gmail. La recuperación guarda un código de un solo uso con vencimiento y el hash de la nueva contraseña en SQLite; después del cambio, la contraseña guardada ahí tiene prioridad sobre `ADMIN_PASSWORD`. Para conservar estos datos entre reinicios y despliegues, conecta un disco persistente y configura `STORE_DB_PATH=/var/data/store.sqlite3` con el punto de montaje `/var/data`. Sin un disco persistente, Render puede borrar los registros locales, el cambio de contraseña y los códigos al reiniciar o volver a desplegar.
+1. En Netlify deja **Base directory** vacío y **Build command** como `npm run build`; **Publish directory** es `dist` y **Functions directory** es `netlify/functions` (también están en `netlify.toml`).
+2. En variables de entorno de Netlify configura `SUPABASE_SERVICE_ROLE_KEY`, `ADMIN_EMAIL`, `ADMIN_PASSWORD` y `SESSION_SECRET`. `SUPABASE_URL` es opcional porque el proyecto ya trae su URL pública configurada. Para recuperación de contraseña agrega `SMTP_USER` y `SMTP_APP_PASSWORD`; `SMTP_HOST` y `SMTP_PORT` son opcionales. La URL y bucket de imágenes se leen del archivo público de configuración.
+3. Ejecuta una vez `supabase/netlify-backend.sql` en el SQL Editor del proyecto Supabase. Crea las tablas privadas de credenciales/restablecimiento y la función que reserva stock de forma atómica.
+4. Sube los cambios a la rama `main` conectada a Netlify para que se compile y publique el sitio y sus funciones.
 
-### Trasladar el catálogo existente
+### Conservar el catálogo local
 
-La base Python comienza vacía. Antes de usar el nuevo sitio público, conserva el catálogo anterior y ejecuta una sola vez `migrate_catalog.py` para copiar productos, rutas de fotos y, si las políticas lo permiten, actividad histórica desde Supabase. Completa temporalmente en `.env` `LEGACY_SUPABASE_URL`, `LEGACY_SUPABASE_PUBLISHABLE_KEY`, `PYTHON_ADMIN_URL`, `ADMIN_EMAIL` y `ADMIN_PASSWORD`; luego ejecuta `python migrate_catalog.py`. La clave publicable se usa solo durante esa copia y se puede borrar de `.env` después. No elimines el proyecto ni las tablas antiguas hasta comprobar el catálogo, las fotos y los registros en Python.
+La base `data/store.sqlite3` local contiene 107 productos y una contraseña de administrador restablecida guardada como hash. `migrate-sqlite-products.mjs` primero muestra una vista previa y no envía nada por defecto. Después de revisar el destino y autorizar el envío, la copia se ejecuta desde la carpeta del proyecto con `node migrate-sqlite-products.mjs --confirm-transfer`. La migración combina productos por identificador y no borra productos existentes en Supabase; también conserva el hash de la contraseña restablecida.
 
-Las finanzas guardadas en el navegador se copian al servidor cuando inicias sesión por primera vez desde ese mismo navegador. Los eventos nuevos se guardan en SQLite. El proveedor habitual que se registra en cada producto queda privado en el panel; al registrar una compra de inventario en Finanzas puedes elegir ese producto y se propone su proveedor en el movimiento, que alimenta el gráfico y el historial de costos por proveedor.
+Los productos incluyen costos y proveedores privados, y la fila de credenciales contiene un hash de contraseña. La migración transmite esos datos al proyecto Supabase configurado en `.env`.

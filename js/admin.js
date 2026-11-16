@@ -1,7 +1,7 @@
 const config = window.YCNiceLadyConfig || {};
 const { productsBucket: PRODUCTS_BUCKET, supabaseUrl: SUPABASE_URL } = config;
 const storeIsConfigured = true;
-const sessionStorageKey = 'yc-nice-lady-python-session-v1';
+const sessionStorageKey = 'yc-nice-lady-netlify-session-v1';
 
 const loginView = document.querySelector('#loginView');
 const adminView = document.querySelector('#adminView');
@@ -678,7 +678,7 @@ const financeSaleProduct = document.querySelector('#financeSaleProduct');
 let latestFinanceEntries = [];
 let dismissedWhatsappIds = new Set();
 async function migrateLegacyBrowserData() {
-  const marker = 'ycNiceLady.pythonMigration.v1';
+  const marker = 'ycNiceLady.netlifyMigration.v1';
   if (localStorage.getItem(marker) === 'done') return;
   const oldFinance = JSON.parse(localStorage.getItem('ycNiceLady.financeEntries.v1') || '[]');
   const oldDismissed = JSON.parse(localStorage.getItem('ycNiceLady.dismissedWhatsAppEvents.v1') || '[]');
@@ -782,7 +782,7 @@ async function loadFinanceEntries() {
   const [all] = await Promise.all([request('/api/finance'), loadDismissedWhatsappIds()]);
   latestFinanceEntries = all;
   paintFinance(all);
-  financeStatus.textContent = `${all.length} movimientos guardados en el servidor Python`;
+  financeStatus.textContent = `${all.length} movimientos guardados en la nube`;
   await Promise.all([loadFinanceProductPerformance(), loadPendingWhatsappOrders()]);
 }
 async function loadPendingWhatsappOrders() {
@@ -841,7 +841,7 @@ async function submitFinance(form, entryType) {
   try {
     await request('/api/finance', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
   } catch (error) {
-    financeStatus.textContent = `No se pudo guardar en Python: ${error.message}`;
+    financeStatus.textContent = `No se pudo guardar: ${error.message}`;
     button.disabled = false;
     return;
   }
