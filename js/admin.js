@@ -46,6 +46,9 @@ const orderStatus = document.querySelector('#adminOrderStatus');
 const imagePreview = document.querySelector('#adminImagePreview');
 const previewImage = document.querySelector('#adminPreviewImage');
 const previewCaption = document.querySelector('#adminPreviewCaption');
+const kitEditor = document.querySelector('#kitEditor');
+const kitEditorItems = document.querySelector('#kitEditorItems');
+const addKitItemButton = document.querySelector('#addKitItem');
 
 let products = [];
 let draggedProductId = null;
@@ -132,10 +135,34 @@ function resetProductForm() {
   productForm.elements.id.value = '';
   productForm.elements.existingImagePath.value = '';
   productForm.elements.isActive.checked = true;
+  kitEditorItems.innerHTML = '';
+  syncKitEditorVisibility();
   formTitle.textContent = 'Nuevo producto';
   saveButton.textContent = 'Guardar producto';
   resetFormButton.hidden = true;
   setMessage(productMessage);
+}
+
+function syncKitEditorVisibility() {
+  kitEditor.hidden = !['libros', 'set'].includes(productForm.elements.category.value);
+}
+
+function addKitEditorRow(item = {}) {
+  const row = document.createElement('div');
+  row.className = 'kit-editor-row';
+  row.dataset.kitId = item.id || crypto.randomUUID();
+  const options = products.filter(product => product.category === 'accesorios').map(product =>
+    `<option value="${escapeHtml(product.id)}" ${String(item.accessory_product_id || '') === String(product.id) ? 'selected' : ''}>${escapeHtml(product.name)} · ${formatMoney(product.price)}</option>`
+  ).join('');
+  row.innerHTML = `<label>Nombre del botón<input type="text" data-kit-name maxlength="70" value="${escapeHtml(item.name || '')}" placeholder="Ej. Pegamento"></label><label>Suma al precio (S/)<input type="number" data-kit-price min="0" step="0.01" value="${Number(item.price || 0)}"></label><label>Accesorio vinculado<select data-kit-accessory><option value="">Sin vínculo de inventario</option>${options}</select></label><button type="button" data-remove-kit aria-label="Quitar complemento">Quitar</button>`;
+  kitEditorItems.append(row);
+}
+
+function readKitItems() {
+  return [...kitEditorItems.querySelectorAll('.kit-editor-row')].map(row => {
+    const accessory = products.find(product => String(product.id) === row.querySelector('[data-kit-accessory]').value);
+    return { id: row.dataset.kitId, name: row.querySelector('[data-kit-name]').value.trim(), price: Number(row.querySelector('[data-kit-price]').value || 0), accessory_product_id: accessory?.id || null, accessory_name: accessory?.name || null };
+  }).filter(item => item.name);
 }
 
 function renderProducts() {
@@ -208,6 +235,9 @@ function editProduct(product) {
   productForm.elements.cost_price.value = Number(product.cost_price || 0);
   productForm.elements.stock.value = product.stock;
   productForm.elements.isActive.checked = product.is_active;
+  kitEditorItems.innerHTML = '';
+  (Array.isArray(product.kit_items) ? product.kit_items : []).forEach(item => addKitEditorRow(item));
+  syncKitEditorVisibility();
   formTitle.textContent = `Editar: ${product.name}`;
   saveButton.textContent = 'Guardar cambios';
   resetFormButton.hidden = false;
@@ -344,7 +374,13 @@ async function saveProduct(event) {
   const stock = Number(form.get('stock'));
 
   const comparableName = normalizeSearchText(name).replace(/[^a-z0-9]+/g, '');
-  const duplicateProduct = products.find((product) => String(product.id) !== String(currentId || '') && normalizeSearchText(product.name).replace(/[^a-z0-9]+/g, '') === comparableName);
+  const currentProduct = products.find((product) => String(product.id) === String(currentId || ''));
+  const currentNameIsUnchanged = currentProduct
+    && normalizeSearchText(currentProduct.name).replace(/[^a-z0-9]+/g, '') === comparableName;
+  const duplicateProduct = currentNameIsUnchanged ? null : products.find((product) =>
+    String(product.id) !== String(currentId || '')
+    && normalizeSearchText(product.name).replace(/[^a-z0-9]+/g, '') === comparableName
+  );
   if (duplicateProduct) {
     setMessage(productMessage, `No se guardó: ya existe “${duplicateProduct.name}” en el catálogo público. Revisa el producto existente.`, true);
     return;
@@ -377,8 +413,10 @@ async function saveProduct(event) {
       imagePath = uploadedImagePath;
     }
 
+    const kitItems = category === 'libros' || category === 'set' ? readKitItems() : [];
+    if (kitItems.some(item => !Number.isFinite(item.price) || item.price < 0)) throw new Error('Revisa los precios de los complementos.');
     const productData = {
-      id, name, description, category, supplier: supplier || null, price, cost_price: costPrice, stock, image_path: imagePath,
+      id, name, description, category, supplier: supplier || null, price, cost_price: costPrice, stock, image_path: imagePath, kit_items: kitItems,
       is_active: form.get('isActive') === 'on'
     };
     if (!currentId) {
@@ -449,7 +487,7 @@ loginForm.addEventListener('submit', async (event) => {
   const form = new FormData(loginForm);
   setMessage(loginMessage, 'Ingresando…');
   try {
-    const authResult = await request('/auth/v1/token?grant_type=password', {
+    const authResult = await request('/.netlify/functions/auth?action=login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email: form.get('email').trim(), password: form.get('password') })
@@ -534,6 +572,25 @@ resetConfirmForm.addEventListener('submit', async (event) => {
   }
 });
 
+productForm.elements.category.addEventListener('change', syncKitEditorVisibility);
+addKitItemButton.addEventListener('click', () => addKitEditorRow());
+kitEditorItems.addEventListener('click', event => {
+  const button = event.target.closest('[data-remove-kit]');
+  if (button) button.closest('.kit-editor-row').remove();
+});
+kitEditorItems.addEventListener('change', event => {
+  const select = event.target.closest('[data-kit-accessory]');
+  if (!select) return;
+  const accessory = products.find(product => String(product.id) === select.value);
+  const nameInput = select.closest('.kit-editor-row').querySelector('[data-kit-name]');
+  if (accessory && !nameInput.value.trim()) nameInput.value = accessory.name;
+});
+kitEditorItems.addEventListener('input', event => {
+  const nameInput = event.target.closest('[data-kit-name]');
+  if (!nameInput) return;
+  const match = products.find(product => product.category === 'accesorios' && normalizeSearchText(product.name) === normalizeSearchText(nameInput.value));
+  if (match) nameInput.closest('.kit-editor-row').querySelector('[data-kit-accessory]').value = match.id;
+});
 productForm.addEventListener('submit', saveProduct);
 resetFormButton.addEventListener('click', resetProductForm);
 document.querySelector('#refreshProducts').addEventListener('click', loadProducts);
@@ -604,7 +661,7 @@ productList.addEventListener('dragend', () => {
   productList.querySelectorAll('.is-dragging, .drop-before, .drop-after').forEach((card) => card.classList.remove('is-dragging', 'drop-before', 'drop-after'));
 });
 document.querySelector('#signOut').addEventListener('click', async () => {
-  try { await request('/auth/v1/logout', { method: 'POST', body: '{}' }, { useSession: false }); } catch { /* La sesión local igual se limpia. */ }
+  try { await request('/.netlify/functions/auth?action=logout', { method: 'POST', body: '{}' }, { useSession: false }); } catch { /* La sesión local igual se limpia. */ }
   clearSession();
   resetProductForm();
   await showAdminForCurrentSession();
@@ -735,6 +792,7 @@ function syncFinanceSaleFields({ useCurrentPrices = false } = {}) {
   const form = document.querySelector('#financeSaleForm');
   const product = products.find(item => String(item.id) === financeSaleProduct.value);
   const quantity = Math.max(1, Number(form.elements.quantity.value) || 1);
+  form.elements.product_name.value = product?.name || '';
   if (product && useCurrentPrices) {
     form.elements.unit_price.value = Number(product.price || 0).toFixed(2);
   }
@@ -770,12 +828,12 @@ function paintFinance(entries) {
   financeSalesLedger.innerHTML = salesEntries.map(entry => {
     const quantity = Math.max(1, Number(entry.quantity || 1));
     const product = entry.product_id ? products.find(item => String(item.id) === String(entry.product_id)) : null;
-    return `<tr><td>${financeDate(entry.created_at)}</td><td>${escapeHtml(product?.name || 'Venta general')}</td><td>${quantity} u.</td><td>${financeMoney(Number(entry.amount || 0) / quantity)}</td><td>${financeMoney(entry.amount)}</td><td><button class="finance-delete" type="button" data-finance-delete="${escapeHtml(entry.id)}" aria-label="Eliminar venta">Eliminar</button></td></tr>`;
+    return `<tr><td>${financeDate(entry.created_at)}</td><td>${escapeHtml(entry.product_name || product?.name || 'Venta general')}</td><td>${quantity} u.</td><td>${financeMoney(Number(entry.amount || 0) / quantity)}</td><td>${financeMoney(entry.amount)}</td><td><button class="finance-delete" type="button" data-finance-delete="${escapeHtml(entry.id)}" aria-label="Eliminar venta">Eliminar</button></td></tr>`;
   }).join('') || '<tr><td colspan="6">Aún no hay ventas confirmadas.</td></tr>';
   financeExpenseLedger.innerHTML = expenseEntries.map(entry => {
     const isInventory = entry.category === 'productos';
     const purchasedProduct = entry.product_id ? products.find(product => String(product.id) === String(entry.product_id)) : null;
-    return `<tr><td>${financeDate(entry.created_at)}</td><td>${isInventory ? 'Compra a proveedor' : 'Gasto operativo'}</td><td>${escapeHtml(purchasedProduct?.name || '—')}</td><td>${escapeHtml(entry.supplier || '—')}</td><td>${escapeHtml(entry.description)}</td><td>${financeMoney(entry.amount)}</td><td><button class="finance-delete" type="button" data-finance-delete="${escapeHtml(entry.id)}" aria-label="Eliminar costo o gasto">Eliminar</button></td></tr>`;
+    return `<tr><td>${financeDate(entry.created_at)}</td><td>${isInventory ? 'Compra a proveedor' : 'Gasto operativo'}</td><td>${escapeHtml(entry.product_name || purchasedProduct?.name || '—')}</td><td>${escapeHtml(entry.supplier || '—')}</td><td>${escapeHtml(entry.description)}</td><td>${financeMoney(entry.amount)}</td><td><button class="finance-delete" type="button" data-finance-delete="${escapeHtml(entry.id)}" aria-label="Eliminar costo o gasto">Eliminar</button></td></tr>`;
   }).join('') || '<tr><td colspan="7">Aún no hay costos ni gastos registrados.</td></tr>';
 }
 async function loadFinanceEntries() {
@@ -822,13 +880,14 @@ async function submitFinance(form, entryType) {
       financeStatus.textContent = 'Revisa la cantidad y el precio unitario de venta.';
       return;
     }
-    payload = { entry_type: 'sale', category: 'sale', description, amount, product_id: product?.id || null, quantity, cost_amount: 0, created_at: createdAt.toISOString() };
+    payload = { entry_type: 'sale', category: 'sale', description, amount, product_id: product?.id || null, product_name: String(data.get('product_name') || product?.name || '').trim() || null, quantity, cost_amount: 0, created_at: createdAt.toISOString() };
     const analyticsEventId = String(data.get('analytics_event_id') || '');
     if (analyticsEventId) payload.analytics_event_id = analyticsEventId;
   } else {
     const category = String(data.get('category'));
     const productId = category === 'productos' ? String(data.get('product_id') || '') : '';
-    payload = { entry_type: 'expense', category, description, supplier: String(data.get('supplier') || '').trim() || null, product_id: products.some(product => String(product.id) === productId) ? productId : null, amount, created_at: createdAt.toISOString() };
+    const product = products.find(item => String(item.id) === productId);
+    payload = { entry_type: 'expense', category, description, supplier: String(data.get('supplier') || '').trim() || null, product_id: product?.id || null, product_name: product ? (String(data.get('product_name') || product.name).trim() || product.name) : null, amount, created_at: createdAt.toISOString() };
   }
   const button = form.querySelector('button[type="submit"]');
   button.disabled = true;
@@ -895,11 +954,12 @@ financePendingWhatsapp.addEventListener('click', async event => {
   form.elements.quantity.value = String(quantity);
   if (eventRecord) {
     form.elements.unit_price.value = Number(eventRecord.price || 0).toFixed(2);
-    form.elements.description.value = `${eventRecord.name} × ${quantity}`;
+    form.elements.description.value = `${productName} × ${quantity}`;
   } else {
     form.elements.unit_price.value = '';
     form.elements.description.value = `${productName} × ${quantity}`;
   }
+  form.elements.product_name.value = productName;
   form.elements.amount.value = eventRecord ? (Number(eventRecord.price || 0) * quantity).toFixed(2) : '';
   form.scrollIntoView({ behavior: 'smooth', block: 'center' });
   financeStatus.textContent = 'Pedido cargado para revisión. Confirma el pago y verifica precio y costo antes de guardarlo como venta.';
@@ -911,9 +971,10 @@ function syncFinanceSupplierRequired({ loadProductSupplier = false } = {}) {
   const isInventoryPurchase = financeExpenseForm.elements.category.value === 'productos';
   financeInventoryProductWrap.hidden = !isInventoryPurchase;
   financeExpenseForm.elements.supplier.required = isInventoryPurchase;
+  const selectedProduct = products.find(item => String(item.id) === financeExpenseProduct.value);
+  financeExpenseForm.elements.product_name.value = isInventoryPurchase ? (selectedProduct?.name || '') : '';
   if (loadProductSupplier) {
-    const product = products.find(item => String(item.id) === financeExpenseProduct.value);
-    financeExpenseForm.elements.supplier.value = product?.supplier || '';
+    financeExpenseForm.elements.supplier.value = selectedProduct?.supplier || '';
   }
 }
 financeExpenseForm.elements.category.addEventListener('change', () => syncFinanceSupplierRequired());

@@ -20,6 +20,7 @@ const productsCacheKey = 'yc-nice-lady-public-products-v1';
 let products = [];
 let cart = loadCart();
 let catalogIsFresh = false;
+const kitSelections = new Map();
 
 function loadCart() {
   try {
@@ -103,21 +104,34 @@ function trackStoreEvent(eventType, { product = null, quantity = 1 } = {}) {
 
 function syncCartWithStock() {
   const available = new Map(products.map((product) => [product.id, product.stock]));
-  Object.keys(cart).forEach((id) => {
-    const quantity = getCartQuantity(id);
-    const stock = available.get(id);
-    if (!stock || quantity <= 0) delete cart[id];
-    else cart[id] = Math.min(quantity, stock);
+  Object.keys(cart).forEach((key) => {
+    const line = getCartLine(key, cart[key]);
+    const stock = available.get(line.productId);
+    if (!stock || line.quantity <= 0) { delete cart[key]; return; }
+    line.quantity = Math.min(line.quantity, stock);
+    for (const selection of line.kitSelections) {
+      if (!selection.accessory_product_id) continue;
+      const componentStock = available.get(selection.accessory_product_id);
+      const perKit = Math.max(1, Number(selection.quantity) || 0);
+      line.quantity = Math.min(line.quantity, Math.floor((Number(componentStock) || 0) / perKit));
+    }
+    if (line.quantity <= 0) delete cart[key]; else cart[key] = line.legacy ? line.quantity : line;
   });
   saveCart();
 }
 
+function getCartLine(key, value) {
+  if (typeof value === 'number') return { productId: key, quantity: value, kitSelections: [], legacy: true };
+  return { productId: value?.productId || key, quantity: Number(value?.quantity) || 0, kitSelections: Array.isArray(value?.kitSelections) ? value.kitSelections : [], legacy: false };
+}
+
 function categoryFor(product) {
   const category = normalizeSearchText(product.category || '');
-  if (['libros', 'set', 'kits', 'maquillaje', 'accesorios'].includes(category)) return category;
+  if (category === 'kits') return 'set';
+  if (['libros', 'set', 'maquillaje', 'accesorios'].includes(category)) return category;
   const text = normalizeSearchText(`${product.name} ${product.description || ''}`);
   if (/\blibro\b/.test(text)) return 'libros';
-  if (/\bkit\b/.test(text)) return 'kits';
+  if (/\bkit\b/.test(text)) return 'set';
   if (/racimo|cluster|wispy|volumen|efecto rimel|efecto rímel/.test(text)) return 'set';
   if (/pestañ|lash|rimel|ceja|eyelash/.test(text)) return 'accesorios';
   if (/maquill|labial|base |corrector|rubor|sombra|delineador|polvo/.test(text)) return 'maquillaje';
@@ -149,6 +163,16 @@ function renderProducts() {
       ? `<img src="${image}" alt="${escapeHtml(product.name)}" loading="lazy">`
       : '<span class="product-placeholder" aria-hidden="true">♡</span>';
     const isOut = product.stock <= 0;
+    const kitItems = Array.isArray(product.kit_items) ? product.kit_items.filter(item => item?.name) : [];
+    if (!kitSelections.has(product.id)) kitSelections.set(product.id, new Map());
+    const selected = kitSelections.get(product.id);
+    const kitMarkup = kitItems.length ? `<section class="kit-panel" aria-label="Complementos para ${escapeHtml(product.name)}"><h4>Kit</h4>${kitItems.map(item => {
+      const accessory = products.find(candidate => String(candidate.id) === String(item.accessory_product_id));
+      const quantity = Number(selected.get(String(item.id)) || 0);
+      const accessoryPhoto = accessory?.image_path ? `<button class="kit-photo" type="button" data-preview-product="${accessory.id}" aria-label="Ver foto de ${escapeHtml(accessory.name)}"><img src="${imageUrl(accessory.image_path)}" alt=""><span>Ver foto</span></button>` : '';
+      return `<div class="kit-option" data-kit-option="${escapeHtml(item.id)}">${accessoryPhoto}<span class="kit-option-name">${escapeHtml(item.name)}<small>+ ${formatMoney(item.price)}</small></span><button type="button" data-kit-action="decrease" data-product-id="${product.id}" data-kit-id="${escapeHtml(item.id)}" aria-label="Quitar ${escapeHtml(item.name)}" ${quantity <= 0 ? 'disabled' : ''}>−</button><input type="number" min="0" max="99" step="1" value="${quantity}" data-kit-quantity data-product-id="${product.id}" data-kit-id="${escapeHtml(item.id)}" aria-label="Cantidad de ${escapeHtml(item.name)}"><button type="button" data-kit-action="increase" data-product-id="${product.id}" data-kit-id="${escapeHtml(item.id)}" aria-label="Agregar ${escapeHtml(item.name)}">+</button></div>`;
+    }).join('')}</section>` : '';
+    const kitTotal = kitItems.reduce((sum, item) => sum + Number(item.price || 0) * Number(selected.get(String(item.id)) || 0), 0);
     return `
       <article class="product product-card">
         <button class="product-img" type="button" data-preview-product="${product.id}" aria-label="Ver ${escapeHtml(product.name)}">${imageMarkup}<span class="zoom-hint">Ver foto</span></button>
@@ -156,8 +180,9 @@ function renderProducts() {
           ${stockLabel(product.stock)}
           <h3>${escapeHtml(product.name)}</h3>
           <p class="product-description">${escapeHtml(product.description || 'Sin descripción.')}</p>
+          ${kitMarkup}
           <div class="product-bottom">
-            <span class="price">${formatMoney(product.price)}</span>
+            <span class="price" data-product-total="${product.id}">${formatMoney(Number(product.price) + kitTotal)}</span>
             <button class="add-cart" type="button" data-add-product="${product.id}" ${isOut ? 'disabled' : ''}>
               ${isOut ? 'Sin stock' : 'Agregar'}
             </button>
@@ -169,14 +194,21 @@ function renderProducts() {
 
 function cartEntries() {
   return Object.entries(cart)
-    .map(([id, quantity]) => ({ product: products.find((item) => item.id === id), quantity: Number(quantity) }))
-    .filter(({ product, quantity }) => product && quantity > 0);
+    .map(([key, value]) => {
+      const line = getCartLine(key, value);
+      const product = products.find((item) => String(item.id) === String(line.productId));
+      const kitTotal = line.kitSelections.reduce((sum, selected) => {
+        const component = (product?.kit_items || []).find(item => String(item.id) === String(selected.id));
+        return sum + Number(component?.price || selected.price || 0) * Number(selected.quantity || 0);
+      }, 0);
+      return { key, product, quantity: line.quantity, kitSelections: line.kitSelections, unitPrice: Number(product?.price || 0) + kitTotal };
+    }).filter(({ product, quantity }) => product && quantity > 0);
 }
 
 function renderCart() {
   const entries = cartEntries();
   const itemCount = entries.reduce((total, entry) => total + entry.quantity, 0);
-  const total = entries.reduce((sum, { product, quantity }) => sum + Number(product.price) * quantity, 0);
+  const total = entries.reduce((sum, entry) => sum + entry.unitPrice * entry.quantity, 0);
   cartCount.textContent = itemCount;
   cartTotal.textContent = formatMoney(total);
   checkoutButton.disabled = entries.length === 0 || !navigator.onLine || !catalogIsFresh;
@@ -189,19 +221,22 @@ function renderCart() {
     return;
   }
 
-  cartItemsEl.innerHTML = entries.map(({ product, quantity }) => `
+  cartItemsEl.innerHTML = entries.map(({ key, product, quantity, kitSelections, unitPrice }) => {
+    const selectedNames = kitSelections.filter(item => Number(item.quantity) > 0).map(item => `${item.name}${Number(item.quantity) > 1 ? ` ×${item.quantity}` : ''}`).join(' + ');
+    return `
     <article class="cart-line">
-      <div><h3>${escapeHtml(product.name)}</h3><p>${formatMoney(product.price)} c/u · Disponible: ${product.stock}</p></div>
+      <div><h3>${escapeHtml(product.name)}${selectedNames ? ` + ${escapeHtml(selectedNames)}` : ''}</h3><p>${formatMoney(unitPrice)} c/u · Disponible: ${product.stock}</p></div>
       <div>
-        <div class="cart-line-total">${formatMoney(Number(product.price) * quantity)}</div>
+        <div class="cart-line-total">${formatMoney(unitPrice * quantity)}</div>
         <div class="quantity-actions">
-          <button type="button" data-cart-action="decrease" data-product-id="${product.id}" aria-label="Restar una unidad de ${escapeHtml(product.name)}" ${quantity <= 1 ? 'disabled' : ''}>−</button>
+          <button type="button" data-cart-action="decrease" data-cart-key="${escapeHtml(key)}" aria-label="Restar una unidad de ${escapeHtml(product.name)}" ${quantity <= 1 ? 'disabled' : ''}>−</button>
           <strong>${quantity}</strong>
-          <button type="button" data-cart-action="increase" data-product-id="${product.id}" aria-label="Sumar una unidad de ${escapeHtml(product.name)}" ${quantity >= product.stock ? 'disabled' : ''}>+</button>
-          <button class="remove-line" type="button" data-cart-action="remove" data-product-id="${product.id}">Quitar</button>
+          <button type="button" data-cart-action="increase" data-cart-key="${escapeHtml(key)}" aria-label="Sumar una unidad de ${escapeHtml(product.name)}" ${quantity >= product.stock ? 'disabled' : ''}>+</button>
+          <button class="remove-line" type="button" data-cart-action="remove" data-cart-key="${escapeHtml(key)}">Quitar</button>
         </div>
       </div>
-    </article>`).join('');
+    </article>`;
+  }).join('');
 }
 
 function updateCart() {
@@ -210,10 +245,17 @@ function updateCart() {
   renderProducts();
 }
 
-function addToCart(id) {
+function addToCart(id, selections = []) {
   const product = products.find((item) => item.id === id);
-  if (!product || product.stock <= 0 || getCartQuantity(id) >= product.stock) return false;
-  cart[id] = getCartQuantity(id) + 1;
+  if (!product || product.stock <= 0) return false;
+  const kitSelections = selections.filter(item => Number(item.quantity) > 0).map(item => ({ id: String(item.id), name: item.name, price: Number(item.price) || 0, quantity: Number(item.quantity) || 0, accessory_product_id: item.accessory_product_id || null }));
+  const signature = kitSelections.map(item => `${item.id}:${item.quantity}`).join(',');
+  const key = kitSelections.length ? `${id}::${signature}` : id;
+  const line = getCartLine(key, cart[key] || { productId: id, quantity: 0, kitSelections });
+  if (line.quantity >= product.stock) return false;
+  line.quantity += 1;
+  line.kitSelections = kitSelections;
+  cart[key] = line;
   cartMessage.textContent = '';
   updateCart();
   trackStoreEvent('add_to_cart', { product, quantity: 1 });
@@ -254,7 +296,7 @@ async function loadProducts({ loading = true } = {}) {
 
   try {
     const search = new URLSearchParams({
-      select: 'id,name,description,category,price,stock,image_path,created_at',
+      select: 'id,name,description,category,price,stock,image_path,kit_items,created_at',
       is_active: 'eq.true',
       order: 'created_at.desc'
     });
@@ -286,13 +328,20 @@ async function loadProducts({ loading = true } = {}) {
 }
 
 async function reserveCartStock(entries) {
+  const quantities = new Map();
+  entries.forEach(({ product, quantity, kitSelections }) => {
+    quantities.set(product.id, (quantities.get(product.id) || 0) + quantity);
+    kitSelections.forEach(selection => {
+      if (selection.accessory_product_id) quantities.set(selection.accessory_product_id, (quantities.get(selection.accessory_product_id) || 0) + quantity * Number(selection.quantity || 0));
+    });
+  });
   const response = await fetch('/api/orders', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json'
     },
     body: JSON.stringify({
-      order_items: entries.map(({ product, quantity }) => ({ id: product.id, quantity }))
+      order_items: [...quantities].map(([id, quantity]) => ({ id, quantity }))
     })
   });
   const responseText = await response.text();
@@ -333,13 +382,14 @@ async function checkout() {
     return;
   }
 
-  const total = entries.reduce((sum, { product, quantity }) => sum + Number(product.price) * quantity, 0);
-  const lines = entries.map(({ product, quantity }) => {
+  const total = entries.reduce((sum, entry) => sum + entry.unitPrice * entry.quantity, 0);
+  const lines = entries.map(({ product, quantity, kitSelections, unitPrice }) => {
     const photo = shortProductPhotoUrl(product);
+    const addOns = kitSelections.filter(item => Number(item.quantity) > 0).map(item => `${item.name}${item.quantity > 1 ? ` ×${item.quantity}` : ''}`).join(' + ');
     return [
-      `_Producto:_ ${product.name}`,
+      `_Producto:_ ${product.name}${addOns ? ` + ${addOns}` : ''}`,
       `_Cantidad:_ ${quantity} ${quantity === 1 ? 'unidad' : 'unidades'}`,
-      `_Precio:_ ${formatMoney(Number(product.price))}`,
+      `_Precio:_ ${formatMoney(unitPrice)}`,
       `_Foto del producto:_ ${photo || 'No disponible'}`
     ].join('\n');
   });
@@ -380,10 +430,22 @@ async function checkout() {
 }
 
 grid.addEventListener('click', (event) => {
+  const kitAction = event.target.closest('[data-kit-action]');
+  if (kitAction) {
+    const product = products.find(item => item.id === kitAction.dataset.productId);
+    const item = product?.kit_items?.find(option => String(option.id) === kitAction.dataset.kitId);
+    if (!product || !item) return;
+    const selected = kitSelections.get(product.id) || new Map();
+    selected.set(String(item.id), Math.max(0, Number(selected.get(String(item.id)) || 0) + (kitAction.dataset.kitAction === 'increase' ? 1 : -1)));
+    kitSelections.set(product.id, selected);
+    updateKitCard(product);
+    return;
+  }
   const previewButton = event.target.closest('[data-preview-product]');
   if (previewButton) {
     const product = products.find((item) => item.id === previewButton.dataset.previewProduct);
     if (product) {
+      window.catalogueReturnPosition = window.scrollY;
       document.querySelector('#previewImage').src = imageUrl(product.image_path);
       document.querySelector('#previewImage').alt = product.name;
       document.querySelector('#previewName').textContent = product.name;
@@ -400,10 +462,42 @@ grid.addEventListener('click', (event) => {
   }
   const button = event.target.closest('[data-add-product]');
   if (button) {
-    addToCart(button.dataset.addProduct);
+    const product = products.find(item => item.id === button.dataset.addProduct);
+    const selected = kitSelections.get(product?.id) || new Map();
+    const selections = (product?.kit_items || []).filter(item => Number(selected.get(String(item.id)) || 0) > 0).map(item => ({ ...item, quantity: Number(selected.get(String(item.id))) }));
+    const unavailable = selections.find(item => item.accessory_product_id && Number(products.find(candidate => candidate.id === item.accessory_product_id)?.stock || 0) < item.quantity);
+    if (unavailable) { cartMessage.textContent = `No hay stock suficiente de ${unavailable.accessory_name || unavailable.name}.`; renderCart(); dialog.showModal(); return; }
+    addToCart(button.dataset.addProduct, selections);
     renderCart();
     dialog.showModal();
   }
+});
+
+function updateKitCard(product) {
+  const card = grid.querySelector(`[data-add-product="${CSS.escape(product.id)}"]`)?.closest('.product-card');
+  if (!card) return;
+  const selected = kitSelections.get(product.id) || new Map();
+  const sum = (product.kit_items || []).reduce((total, item) => total + Number(item.price || 0) * Number(selected.get(String(item.id)) || 0), 0);
+  card.querySelector(`[data-product-total="${CSS.escape(product.id)}"]`).textContent = formatMoney(Number(product.price) + sum);
+  card.querySelectorAll('[data-kit-option]').forEach(option => {
+    const quantity = Number(selected.get(option.dataset.kitOption) || 0);
+    option.querySelector('[data-kit-quantity]').value = quantity;
+    option.querySelector('[data-kit-action="decrease"]').disabled = quantity <= 0;
+  });
+}
+
+grid.addEventListener('input', event => {
+  const input = event.target.closest('[data-kit-quantity]');
+  if (!input) return;
+  const product = products.find(item => item.id === input.dataset.productId);
+  const item = product?.kit_items?.find(option => String(option.id) === input.dataset.kitId);
+  if (!product || !item) return;
+  const selected = kitSelections.get(product.id) || new Map();
+  const quantity = Math.max(0, Math.min(99, Math.trunc(Number(input.value) || 0)));
+  selected.set(String(item.id), quantity);
+  kitSelections.set(product.id, selected);
+  input.value = quantity;
+  updateKitCard(product);
 });
 
 document.querySelector('.category-tabs').addEventListener('click', (event) => {
@@ -416,17 +510,20 @@ document.querySelector('.category-tabs').addEventListener('click', (event) => {
 priceMax.addEventListener('input', () => { document.querySelector('#priceMaxLabel').textContent = formatMoney(priceMax.value); renderProducts(); });
 productSearch.addEventListener('input', renderProducts);
 document.querySelector('.preview-close').addEventListener('click', () => preview.close());
+document.querySelector('#previewContinue').addEventListener('click', () => preview.close());
+preview.addEventListener('close', () => { if (Number.isFinite(window.catalogueReturnPosition)) window.scrollTo({ top: window.catalogueReturnPosition, behavior: 'instant' }); });
 preview.addEventListener('click', (event) => { if (event.target === preview) preview.close(); });
 
 cartItemsEl.addEventListener('click', (event) => {
   const button = event.target.closest('[data-cart-action]');
   if (!button) return;
-  const id = button.dataset.productId;
+  const id = button.dataset.cartKey;
   const action = button.dataset.cartAction;
-  const product = products.find((item) => item.id === id);
+  const line = getCartLine(id, cart[id]);
+  const product = products.find((item) => item.id === line.productId);
   if (action === 'remove') delete cart[id];
-  else if (action === 'decrease') cart[id] = getCartQuantity(id) - 1;
-  else if (action === 'increase' && product) cart[id] = Math.min(getCartQuantity(id) + 1, product.stock);
+  else if (action === 'decrease') { line.quantity--; cart[id] = line.legacy ? line.quantity : line; }
+  else if (action === 'increase' && product) { line.quantity = Math.min(line.quantity + 1, product.stock); cart[id] = line.legacy ? line.quantity : line; }
   cartMessage.textContent = '';
   updateCart();
 });
