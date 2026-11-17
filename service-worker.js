@@ -1,4 +1,4 @@
-const SHELL_CACHE = 'yc-nice-lady-shell-v8-kit-options';
+const SHELL_CACHE = 'yc-nice-lady-shell-v9-kit-single-row';
 const IMAGE_CACHE = 'yc-nice-lady-images-v1';
 const IMAGE_CACHE_LIMIT = 120;
 const SHELL_ASSETS = [
@@ -10,7 +10,7 @@ const SHELL_ASSETS = [
   '/css/style.css?v=kit-options-20261116-2',
   '/js/script.js',
   '/js/supabase-config.js',
-  '/js/store.js?v=kit-options-20261116-1',
+  '/js/store.js?v=kit-options-20261116-2',
   '/js/admin.js?v=kit-options-20261116-1'
 ];
 

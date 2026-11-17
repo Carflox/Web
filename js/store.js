@@ -173,7 +173,7 @@ function renderProducts() {
         || products.find(candidate => categoryFor(candidate) === 'accesorios' && normalizeSearchText(candidate.name) === normalizeSearchText(item.name));
       const quantity = Number(selected.get(String(item.id)) || 0);
       const outOfStock = Boolean(accessory && Number(accessory.stock) <= 0);
-      return `<div class="kit-option"><button class="kit-item-button ${quantity > 0 ? 'is-selected' : ''}" type="button" data-kit-item data-product-id="${product.id}" data-kit-id="${escapeHtml(item.id)}" aria-pressed="${quantity > 0}" ${outOfStock ? 'disabled' : ''}>${escapeHtml(item.name)}</button></div>`;
+      return `<div class="kit-option"><button class="kit-item-button ${quantity > 0 ? 'is-selected' : ''}" type="button" data-kit-item data-product-id="${product.id}" data-kit-id="${escapeHtml(item.id)}" aria-label="Sumar ${escapeHtml(item.name)} al kit" title="${escapeHtml(item.name)}" aria-pressed="${quantity > 0}" ${outOfStock ? 'disabled' : ''}>${escapeHtml(item.name)}</button><button class="kit-remove-button" type="button" data-kit-remove data-product-id="${product.id}" data-kit-id="${escapeHtml(item.id)}" aria-label="Quitar una unidad de ${escapeHtml(item.name)}" ${quantity <= 0 ? 'disabled' : ''}>Quitar</button></div>`;
     }).join('') : '<p class="kit-empty">Complementos disponibles próximamente.</p>'}</section>` : '';
     const kitTotal = kitItems.reduce((sum, item) => sum + Number(item.price || 0) * Number(selected.get(String(item.id)) || 0), 0);
     return `
@@ -433,6 +433,18 @@ async function checkout() {
 }
 
 grid.addEventListener('click', (event) => {
+  const removeKitButton = event.target.closest('[data-kit-remove]');
+  if (removeKitButton) {
+    const product = products.find(item => item.id === removeKitButton.dataset.productId);
+    const kitItem = product?.kit_items?.find(item => String(item.id) === removeKitButton.dataset.kitId);
+    if (!product || !kitItem) return;
+    const selected = kitSelections.get(product.id) || new Map();
+    const quantity = Math.max(0, Number(selected.get(String(kitItem.id)) || 0) - 1);
+    selected.set(String(kitItem.id), quantity);
+    kitSelections.set(product.id, selected);
+    updateKitCard(product);
+    return;
+  }
   const kitButton = event.target.closest('[data-kit-item]');
   if (kitButton) {
     window.clearTimeout(pendingKitClickTimer);
@@ -502,6 +514,8 @@ function updateKitCard(product) {
     const quantity = Number(selected.get(button.dataset.kitId) || 0);
     button.classList.toggle('is-selected', quantity > 0);
     button.setAttribute('aria-pressed', String(quantity > 0));
+    const removeButton = button.parentElement.querySelector('[data-kit-remove]');
+    if (removeButton) removeButton.disabled = quantity <= 0;
   });
 }
 
