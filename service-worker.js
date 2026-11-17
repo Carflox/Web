@@ -1,4 +1,4 @@
-const SHELL_CACHE = 'yc-nice-lady-shell-v5-netlify-functions';
+const SHELL_CACHE = 'yc-nice-lady-shell-v8-kit-options';
 const IMAGE_CACHE = 'yc-nice-lady-images-v1';
 const IMAGE_CACHE_LIMIT = 120;
 const SHELL_ASSETS = [
@@ -7,11 +7,11 @@ const SHELL_ASSETS = [
   '/manifest.webmanifest',
   '/img/pwa-icon.svg',
   '/img/logo-transparent.png?v=20261114-1',
-  '/css/style.css?v=logo-transparent-20261114-1',
+  '/css/style.css?v=kit-options-20261116-2',
   '/js/script.js',
   '/js/supabase-config.js',
-  '/js/store.js?v=netlify-functions-20261115-3',
-  '/js/admin.js?v=netlify-functions-20261115-3'
+  '/js/store.js?v=kit-options-20261116-1',
+  '/js/admin.js?v=kit-options-20261116-1'
 ];
 
 self.addEventListener('install', event => {

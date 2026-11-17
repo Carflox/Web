@@ -21,6 +21,7 @@ let products = [];
 let cart = loadCart();
 let catalogIsFresh = false;
 const kitSelections = new Map();
+let pendingKitClickTimer = null;
 
 function loadCart() {
   try {
@@ -164,14 +165,16 @@ function renderProducts() {
       : '<span class="product-placeholder" aria-hidden="true">♡</span>';
     const isOut = product.stock <= 0;
     const kitItems = Array.isArray(product.kit_items) ? product.kit_items.filter(item => item?.name) : [];
+    const hasKitPanel = kitItems.length > 0 || ['libros', 'set'].includes(categoryFor(product));
     if (!kitSelections.has(product.id)) kitSelections.set(product.id, new Map());
     const selected = kitSelections.get(product.id);
-    const kitMarkup = kitItems.length ? `<section class="kit-panel" aria-label="Complementos para ${escapeHtml(product.name)}"><h4>Kit</h4>${kitItems.map(item => {
-      const accessory = products.find(candidate => String(candidate.id) === String(item.accessory_product_id));
+    const kitMarkup = hasKitPanel ? `<section class="kit-panel" aria-label="Complementos para ${escapeHtml(product.name)}"><h4>Kit</h4>${kitItems.length ? kitItems.map(item => {
+      const accessory = products.find(candidate => String(candidate.id) === String(item.accessory_product_id))
+        || products.find(candidate => categoryFor(candidate) === 'accesorios' && normalizeSearchText(candidate.name) === normalizeSearchText(item.name));
       const quantity = Number(selected.get(String(item.id)) || 0);
-      const accessoryPhoto = accessory?.image_path ? `<button class="kit-photo" type="button" data-preview-product="${accessory.id}" aria-label="Ver foto de ${escapeHtml(accessory.name)}"><img src="${imageUrl(accessory.image_path)}" alt=""><span>Ver foto</span></button>` : '';
-      return `<div class="kit-option" data-kit-option="${escapeHtml(item.id)}">${accessoryPhoto}<span class="kit-option-name">${escapeHtml(item.name)}<small>+ ${formatMoney(item.price)}</small></span><button type="button" data-kit-action="decrease" data-product-id="${product.id}" data-kit-id="${escapeHtml(item.id)}" aria-label="Quitar ${escapeHtml(item.name)}" ${quantity <= 0 ? 'disabled' : ''}>−</button><input type="number" min="0" max="99" step="1" value="${quantity}" data-kit-quantity data-product-id="${product.id}" data-kit-id="${escapeHtml(item.id)}" aria-label="Cantidad de ${escapeHtml(item.name)}"><button type="button" data-kit-action="increase" data-product-id="${product.id}" data-kit-id="${escapeHtml(item.id)}" aria-label="Agregar ${escapeHtml(item.name)}">+</button></div>`;
-    }).join('')}</section>` : '';
+      const outOfStock = Boolean(accessory && Number(accessory.stock) <= 0);
+      return `<div class="kit-option"><button class="kit-item-button ${quantity > 0 ? 'is-selected' : ''}" type="button" data-kit-item data-product-id="${product.id}" data-kit-id="${escapeHtml(item.id)}" aria-pressed="${quantity > 0}" ${outOfStock ? 'disabled' : ''}>${escapeHtml(item.name)}</button></div>`;
+    }).join('') : '<p class="kit-empty">Complementos disponibles próximamente.</p>'}</section>` : '';
     const kitTotal = kitItems.reduce((sum, item) => sum + Number(item.price || 0) * Number(selected.get(String(item.id)) || 0), 0);
     return `
       <article class="product product-card">
@@ -430,33 +433,29 @@ async function checkout() {
 }
 
 grid.addEventListener('click', (event) => {
-  const kitAction = event.target.closest('[data-kit-action]');
-  if (kitAction) {
-    const product = products.find(item => item.id === kitAction.dataset.productId);
-    const item = product?.kit_items?.find(option => String(option.id) === kitAction.dataset.kitId);
-    if (!product || !item) return;
-    const selected = kitSelections.get(product.id) || new Map();
-    selected.set(String(item.id), Math.max(0, Number(selected.get(String(item.id)) || 0) + (kitAction.dataset.kitAction === 'increase' ? 1 : -1)));
-    kitSelections.set(product.id, selected);
-    updateKitCard(product);
+  const kitButton = event.target.closest('[data-kit-item]');
+  if (kitButton) {
+    window.clearTimeout(pendingKitClickTimer);
+    pendingKitClickTimer = window.setTimeout(() => {
+      const product = products.find(item => item.id === kitButton.dataset.productId);
+      const kitItem = product?.kit_items?.find(item => String(item.id) === kitButton.dataset.kitId);
+      if (!product || !kitItem) return;
+      const accessory = products.find(item => String(item.id) === String(kitItem.accessory_product_id))
+        || products.find(item => categoryFor(item) === 'accesorios' && normalizeSearchText(item.name) === normalizeSearchText(kitItem.name));
+      const selected = kitSelections.get(product.id) || new Map();
+      const current = Number(selected.get(String(kitItem.id)) || 0);
+      if (accessory && current >= Number(accessory.stock || 0)) return;
+      selected.set(String(kitItem.id), current + 1);
+      kitSelections.set(product.id, selected);
+      updateKitCard(product);
+    }, 500);
     return;
   }
   const previewButton = event.target.closest('[data-preview-product]');
   if (previewButton) {
     const product = products.find((item) => item.id === previewButton.dataset.previewProduct);
     if (product) {
-      window.catalogueReturnPosition = window.scrollY;
-      document.querySelector('#previewImage').src = imageUrl(product.image_path);
-      document.querySelector('#previewImage').alt = product.name;
-      document.querySelector('#previewName').textContent = product.name;
-      document.querySelector('#previewPrice').textContent = formatMoney(product.price);
-      document.querySelector('#previewAdd').onclick = () => {
-        addToCart(product.id);
-        preview.close();
-        renderCart();
-        dialog.showModal();
-      };
-      preview.showModal();
+      openProductPhoto(product);
     }
     return;
   }
@@ -473,32 +472,38 @@ grid.addEventListener('click', (event) => {
   }
 });
 
+grid.addEventListener('dblclick', event => {
+  const kitButton = event.target.closest('[data-kit-item]');
+  if (!kitButton) return;
+  window.clearTimeout(pendingKitClickTimer);
+  pendingKitClickTimer = null;
+  const parent = products.find(item => item.id === kitButton.dataset.productId);
+  const kitItem = parent?.kit_items?.find(item => String(item.id) === kitButton.dataset.kitId);
+  const accessory = products.find(item => String(item.id) === String(kitItem?.accessory_product_id))
+    || products.find(item => categoryFor(item) === 'accesorios' && normalizeSearchText(item.name) === normalizeSearchText(kitItem?.name));
+  if (accessory) openProductPhoto(accessory);
+});
+
+function openProductPhoto(product) {
+  if (!product) return;
+  window.catalogueReturnPosition = window.scrollY;
+  document.querySelector('#previewImage').src = imageUrl(product.image_path);
+  document.querySelector('#previewImage').alt = product.name;
+  preview.showModal();
+}
+
 function updateKitCard(product) {
   const card = grid.querySelector(`[data-add-product="${CSS.escape(product.id)}"]`)?.closest('.product-card');
   if (!card) return;
   const selected = kitSelections.get(product.id) || new Map();
   const sum = (product.kit_items || []).reduce((total, item) => total + Number(item.price || 0) * Number(selected.get(String(item.id)) || 0), 0);
   card.querySelector(`[data-product-total="${CSS.escape(product.id)}"]`).textContent = formatMoney(Number(product.price) + sum);
-  card.querySelectorAll('[data-kit-option]').forEach(option => {
-    const quantity = Number(selected.get(option.dataset.kitOption) || 0);
-    option.querySelector('[data-kit-quantity]').value = quantity;
-    option.querySelector('[data-kit-action="decrease"]').disabled = quantity <= 0;
+  card.querySelectorAll('[data-kit-item]').forEach(button => {
+    const quantity = Number(selected.get(button.dataset.kitId) || 0);
+    button.classList.toggle('is-selected', quantity > 0);
+    button.setAttribute('aria-pressed', String(quantity > 0));
   });
 }
-
-grid.addEventListener('input', event => {
-  const input = event.target.closest('[data-kit-quantity]');
-  if (!input) return;
-  const product = products.find(item => item.id === input.dataset.productId);
-  const item = product?.kit_items?.find(option => String(option.id) === input.dataset.kitId);
-  if (!product || !item) return;
-  const selected = kitSelections.get(product.id) || new Map();
-  const quantity = Math.max(0, Math.min(99, Math.trunc(Number(input.value) || 0)));
-  selected.set(String(item.id), quantity);
-  kitSelections.set(product.id, selected);
-  input.value = quantity;
-  updateKitCard(product);
-});
 
 document.querySelector('.category-tabs').addEventListener('click', (event) => {
   const button = event.target.closest('[data-category]');
