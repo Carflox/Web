@@ -1,4 +1,5 @@
 import { errorResponse, json, sb } from '../lib/_shared.mjs';
+import { appwriteConfigured, appwriteImageUrl, getAppwriteProducts } from '../lib/appwrite.mjs';
 
 const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
 
@@ -8,11 +9,19 @@ export default async function handler(request, context) {
     if (!/^[A-Za-z0-9_-]{22}$/.test(compact)) return new Response('Enlace de producto no válido', { status: 404 });
     const id = Buffer.from(compact, 'base64url').toString('hex').match(/.{8}|.{4}|.{4}|.{4}|.{12}/g)?.join('-');
     if (!id || id.length !== 36) return new Response('Enlace de producto no válido', { status: 404 });
-    const { body } = await sb(`/rest/v1/products?id=eq.${encodeURIComponent(id)}&is_active=eq.true&select=id,name,price,image_path&limit=1`);
-    const product = body?.[0];
+    let product;
+    if (appwriteConfigured) {
+      const products = await getAppwriteProducts(new URLSearchParams({ id: `eq.${id}`, is_active: 'eq.true' }));
+      product = products[0];
+    } else {
+      const { body } = await sb(`/rest/v1/products?id=eq.${encodeURIComponent(id)}&is_active=eq.true&select=id,name,price,image_path&limit=1`);
+      product = body?.[0];
+    }
     if (!product?.image_path) return new Response('No se encontró la foto del producto', { status: 404 });
     const imagePath = String(product.image_path).split('/').map(encodeURIComponent).join('/');
-    const image = `${process.env.SUPABASE_URL.replace(/\/$/, '')}/storage/v1/object/public/${encodeURIComponent(process.env.SUPABASE_PRODUCTS_BUCKET || 'product-images')}/${imagePath}`;
+    const image = appwriteConfigured
+      ? appwriteImageUrl(product.image_path)
+      : `${process.env.SUPABASE_URL.replace(/\/$/, '')}/storage/v1/object/public/${encodeURIComponent(process.env.SUPABASE_PRODUCTS_BUCKET || 'product-images')}/${imagePath}`;
     const origin = new URL(request.url).origin;
     const title = `${product.name} | YC NICE LADY`;
     const description = `${product.name} · S/ ${Number(product.price || 0).toFixed(2)} · YC NICE LADY`;

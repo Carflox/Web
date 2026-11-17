@@ -1,5 +1,5 @@
 const config = window.YCNiceLadyConfig || {};
-const { productsBucket: PRODUCTS_BUCKET, supabaseUrl: SUPABASE_URL, whatsappNumber: WHATSAPP_NUMBER = '' } = config;
+const { productsBucket: PRODUCTS_BUCKET, supabaseUrl: SUPABASE_URL, appwriteEndpoint: APPWRITE_ENDPOINT, appwriteProjectId: APPWRITE_PROJECT_ID, whatsappNumber: WHATSAPP_NUMBER = '' } = config;
 const storeIsConfigured = true;
 const grid = document.querySelector('#productGrid');
 const status = document.querySelector('#productStatus');
@@ -47,7 +47,12 @@ function formatMoney(value) {
 }
 
 function imageUrl(path) {
-  if (!path || !SUPABASE_URL || !PRODUCTS_BUCKET) return '';
+  if (!path || !PRODUCTS_BUCKET) return '';
+  if (APPWRITE_ENDPOINT && APPWRITE_PROJECT_ID && !String(path).includes('/')) {
+    const query = new URLSearchParams({ project: APPWRITE_PROJECT_ID });
+    return `${APPWRITE_ENDPOINT.replace(/\/+$/, '')}/storage/buckets/${encodeURIComponent(PRODUCTS_BUCKET)}/files/${encodeURIComponent(path)}/view?${query}`;
+  }
+  if (!SUPABASE_URL) return '';
   const safePath = String(path).split('/').map(encodeURIComponent).join('/');
   return `${SUPABASE_URL}/storage/v1/object/public/${encodeURIComponent(PRODUCTS_BUCKET)}/${safePath}`;
 }

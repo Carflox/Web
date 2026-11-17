@@ -1,5 +1,5 @@
 const config = window.YCNiceLadyConfig || {};
-const { productsBucket: PRODUCTS_BUCKET, supabaseUrl: SUPABASE_URL } = config;
+const { productsBucket: PRODUCTS_BUCKET, supabaseUrl: SUPABASE_URL, appwriteEndpoint: APPWRITE_ENDPOINT, appwriteProjectId: APPWRITE_PROJECT_ID } = config;
 const storeIsConfigured = true;
 const sessionStorageKey = 'yc-nice-lady-netlify-session-v1';
 
@@ -86,6 +86,10 @@ function apiUrl(path) {
 
 function publicStorageUrl(path) {
   if (!path) return '';
+  if (APPWRITE_ENDPOINT && APPWRITE_PROJECT_ID && PRODUCTS_BUCKET && !String(path).includes('/')) {
+    const query = new URLSearchParams({ project: APPWRITE_PROJECT_ID });
+    return `${APPWRITE_ENDPOINT.replace(/\/+$/, '')}/storage/buckets/${encodeURIComponent(PRODUCTS_BUCKET)}/files/${encodeURIComponent(path)}/view?${query}`;
+  }
   const safePath = String(path).split('/').map(encodeURIComponent).join('/');
   return `${SUPABASE_URL}/storage/v1/object/public/${encodeURIComponent(PRODUCTS_BUCKET)}/${safePath}`;
 }
@@ -345,7 +349,7 @@ function newProductId() {
 
 async function uploadImage(imagePath, file) {
   const safePath = imagePath.split('/').map(encodeURIComponent).join('/');
-  await request(`/api/images/${encodeURIComponent(PRODUCTS_BUCKET)}/${safePath}`, {
+  return request(`/api/images/${encodeURIComponent(PRODUCTS_BUCKET)}/${safePath}`, {
     method: 'POST',
     headers: { 'Content-Type': file.type },
     body: file
@@ -409,8 +413,9 @@ async function saveProduct(event) {
       const optimizedFile = await optimizeProductImage(file);
       if (optimizedFile.size > 5 * 1024 * 1024) throw new Error('La foto sigue superando 5 MB después de optimizarla. Elige una imagen más pequeña.');
       uploadedImagePath = `products/${id}/${Date.now()}.${fileExtension(optimizedFile)}`;
-      await uploadImage(uploadedImagePath, optimizedFile);
-      imagePath = uploadedImagePath;
+      const upload = await uploadImage(uploadedImagePath, optimizedFile);
+      imagePath = upload.fileId || uploadedImagePath;
+      uploadedImagePath = imagePath;
     }
 
     const kitItems = category === 'libros' || category === 'set' ? readKitItems() : [];
@@ -1052,7 +1057,7 @@ async function loadFinanceProductPerformance() {
     body.innerHTML = products.map(product => {
       const engagement = activity.get(String(product.id)) || { cart: 0, whatsapp: 0 };
       const sales = sold.get(String(product.id)) || { quantity: 0, revenue: 0 };
-      const src = product.image_path ? `${SUPABASE_URL}/storage/v1/object/public/${PRODUCTS_BUCKET}/${product.image_path.split('/').map(encodeURIComponent).join('/')}` : '';
+      const src = product.image_path ? publicStorageUrl(product.image_path) : '';
       return `<tr><td>${src ? `<a href="${escapeHtml(src)}" target="_blank" rel="noopener"><img src="${escapeHtml(src)}" alt="${escapeHtml(product.name)}" loading="lazy" width="44" height="44" style="object-fit:cover;border-radius:8px;vertical-align:middle;margin-right:8px"></a>` : ''}${escapeHtml(product.name)}</td><td>${engagement.cart}</td><td>${engagement.whatsapp}</td><td>${sales.quantity}</td><td>${financeMoney(sales.revenue)}</td></tr>`;
     }).join('');
     status.textContent = 'Actividad del catálogo y ventas confirmadas por producto. Agregar y WhatsApp miden interés, no ventas.';

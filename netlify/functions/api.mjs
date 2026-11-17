@@ -1,25 +1,40 @@
 import { randomBytes } from 'node:crypto';
 import nodemailer from 'nodemailer';
 import { errorResponse, fail, hashPassword, hashResetCode, json, newResetCode, productsBucket, queryOf, readJson, requireAdmin, sb, supabaseUrl, verifySession } from '../lib/_shared.mjs';
+import {
+  appwriteConfigured, appwriteProductsBucketId, createAppwriteFile,
+  deleteAppwriteFile, findAppwriteFileId
+} from '../lib/appwrite.mjs';
 
 async function handleImage(request, pathname) {
   requireAdmin(request);
   const parts = pathname.split('/').slice(3).map(part => decodeURIComponent(part));
   const [bucket, ...pathParts] = parts;
   const imagePath = pathParts.join('/');
-  if (bucket !== productsBucket || !imagePath.startsWith('products/') || imagePath.split('/').some(part => !part || part === '.' || part === '..')) return fail('Ruta de imagen no válida.', 400);
+  const activeBucket = appwriteConfigured ? appwriteProductsBucketId : productsBucket;
+  if (bucket !== activeBucket || !imagePath || imagePath.split('/').some(part => !part || part === '.' || part === '..')) return fail('Ruta de imagen no válida.', 400);
   if (!['POST', 'DELETE'].includes(request.method)) return fail('Método no permitido.', 405);
   if (request.method === 'POST') {
     const type = request.headers.get('content-type') || '';
     if (!['image/jpeg', 'image/png', 'image/webp'].includes(type)) return fail('Solo se aceptan imágenes JPG, PNG o WEBP.', 415);
     const bytes = await request.arrayBuffer();
     if (!bytes.byteLength || bytes.byteLength > 5 * 1024 * 1024) return fail('La imagen debe pesar entre 1 byte y 5 MB.', 400);
+    if (appwriteConfigured) {
+      const file = await createAppwriteFile(imagePath.split(/[\\/]/).pop(), bytes, type);
+      return json({ ok: true, fileId: file.$id }, 201);
+    }
     const response = await fetch(`${supabaseUrl}/storage/v1/object/${encodeURIComponent(bucket)}/${imagePath.split('/').map(encodeURIComponent).join('/')}`, {
       method: 'POST', headers: { apikey: process.env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`, 'Content-Type': type, 'x-upsert': 'false', 'cache-control': '3600' }, body: bytes
     });
     const text = await response.text();
     if (!response.ok) throw Object.assign(new Error(text || 'Storage rechazó la imagen.'), { status: response.status });
     return json({ ok: true }, response.status);
+  }
+  if (appwriteConfigured) {
+    const fileId = await findAppwriteFileId(imagePath);
+    if (!fileId) return json({ ok: true, removed: false });
+    await deleteAppwriteFile(fileId);
+    return json({ ok: true });
   }
   const response = await fetch(`${supabaseUrl}/storage/v1/object/${encodeURIComponent(bucket)}/${imagePath.split('/').map(encodeURIComponent).join('/')}`, {
     method: 'DELETE', headers: { apikey: process.env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}` }
@@ -112,7 +127,7 @@ export default async function handler(request) {
         if (!['sale', 'expense'].includes(entry.entry_type) || !(Number(entry.amount) > 0)) return fail('Revisa el tipo y el monto del movimiento.', 400);
         const allowed = ['sale', 'delivery', 'gasolina', 'material_moto', 'productos', 'empaque', 'otros'];
         if (!allowed.includes(entry.category)) return fail('La categoría no es válida.', 400);
-        const data = { entry_type: entry.entry_type, category: entry.category, description: String(entry.description || '').slice(0, 160), supplier: entry.supplier || null, amount: Number(entry.amount), product_id: entry.product_id || null, quantity: Math.max(1, Number(entry.quantity) || 1), cost_amount: Number(entry.cost_amount) || 0, analytics_event_id: entry.analytics_event_id || null, ...(entry.created_at ? { created_at: entry.created_at } : {}) };
+        const data = { entry_type: entry.entry_type, category: entry.category, description: String(entry.description || '').slice(0, 160), supplier: entry.supplier || null, amount: Number(entry.amount), product_id: entry.product_id || null, product_name: String(entry.product_name || '').trim().slice(0, 90) || null, quantity: Math.max(1, Number(entry.quantity) || 1), cost_amount: Number(entry.cost_amount) || 0, analytics_event_id: entry.analytics_event_id || null, ...(entry.created_at ? { created_at: entry.created_at } : {}) };
         const { body } = await sb('/rest/v1/store_finance_entries', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify(data) });
         return json(body?.[0] || { ok: true }, 201);
       }

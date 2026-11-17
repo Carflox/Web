@@ -49,7 +49,8 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  if (url.pathname.includes('/storage/v1/object/public/')) {
+  if (url.pathname.includes('/storage/v1/object/public/')
+    || (url.pathname.includes('/storage/buckets/') && url.pathname.includes('/files/'))) {
     const cachePromise = caches.open(IMAGE_CACHE);
     const updatePromise = cachePromise.then(cache => fetch(request).then(async response => {
       if (response.ok || response.type === 'opaque') {
