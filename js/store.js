@@ -175,7 +175,6 @@ function renderProducts() {
       const outOfStock = Boolean(accessory && Number(accessory.stock) <= 0);
       return `<div class="kit-option"><button class="kit-item-button ${quantity > 0 ? 'is-selected' : ''}" type="button" data-kit-item data-product-id="${product.id}" data-kit-id="${escapeHtml(item.id)}" aria-label="Sumar ${escapeHtml(item.name)} al kit" title="${escapeHtml(item.name)}" aria-pressed="${quantity > 0}" ${outOfStock ? 'disabled' : ''}>${escapeHtml(item.name)}</button><button class="kit-remove-button" type="button" data-kit-remove data-product-id="${product.id}" data-kit-id="${escapeHtml(item.id)}" aria-label="Quitar una unidad de ${escapeHtml(item.name)}" ${quantity <= 0 ? 'disabled' : ''}>Quitar</button></div>`;
     }).join('') : '<p class="kit-empty">Complementos disponibles próximamente.</p>'}</section>` : '';
-    const kitTotal = kitItems.reduce((sum, item) => sum + Number(item.price || 0) * Number(selected.get(String(item.id)) || 0), 0);
     return `
       <article class="product product-card">
         <button class="product-img" type="button" data-preview-product="${product.id}" aria-label="Ver ${escapeHtml(product.name)}">${imageMarkup}<span class="zoom-hint">Ver foto</span></button>
@@ -185,7 +184,7 @@ function renderProducts() {
           <p class="product-description">${escapeHtml(product.description || 'Sin descripción.')}</p>
           ${kitMarkup}
           <div class="product-bottom">
-            <span class="price" data-product-total="${product.id}">${formatMoney(Number(product.price) + kitTotal)}</span>
+            <span class="price">${formatMoney(product.price)}</span>
             <button class="add-cart" type="button" data-add-product="${product.id}" ${isOut ? 'disabled' : ''}>
               ${isOut ? 'Sin stock' : 'Agregar'}
             </button>
@@ -508,8 +507,6 @@ function updateKitCard(product) {
   const card = grid.querySelector(`[data-add-product="${CSS.escape(product.id)}"]`)?.closest('.product-card');
   if (!card) return;
   const selected = kitSelections.get(product.id) || new Map();
-  const sum = (product.kit_items || []).reduce((total, item) => total + Number(item.price || 0) * Number(selected.get(String(item.id)) || 0), 0);
-  card.querySelector(`[data-product-total="${CSS.escape(product.id)}"]`).textContent = formatMoney(Number(product.price) + sum);
   card.querySelectorAll('[data-kit-item]').forEach(button => {
     const quantity = Number(selected.get(button.dataset.kitId) || 0);
     button.classList.toggle('is-selected', quantity > 0);
