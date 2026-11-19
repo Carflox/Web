@@ -288,48 +288,58 @@ async function loadProducts({ loading = true } = {}) {
     grid.innerHTML = '<p class="catalogue-loading">Cargando productos…</p>';
   }
 
-  if (!storeIsConfigured) {
-    showCatalogueProblem(
-      'No se inició la conexión del catálogo.',
-      'Recarga la página. Si la abriste con doble clic, publícala primero en Netlify para que la tienda se conecte correctamente.'
-    );
-    return false;
-  }
   if (!navigator.onLine) {
     if (loadCachedCatalog()) return false;
-    showCatalogueProblem('No hay conexión a internet.', 'Abre la tienda con internet una vez en este dispositivo para guardar el catálogo y poder consultarlo después sin conexión.');
+    showCatalogueProblem(
+      'No hay conexión a internet.',
+      'Abre la tienda con internet una vez en este dispositivo para guardar el catálogo.'
+    );
     return false;
   }
 
   try {
-    const search = new URLSearchParams({
-      select: 'id,name,description,category,price,stock,image_path,kit_items,created_at',
-      is_active: 'eq.true',
-      order: 'created_at.desc'
-    });
-    const query = fetch(`/rest/v1/products?${search}`).then(async (response) => {
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.message || 'No se pudo consultar el catálogo.');
-      return payload;
-    });
+    const query = fetch('/api/products?is_active=eq.true&order=created_at.desc')
+      .then(async (response) => {
+        const payload = await response.json();
+        if (!response.ok) {
+          throw new Error(payload.message || 'No se pudo consultar el catálogo.');
+        }
+        return payload;
+      });
+
     const timeout = new Promise((_, reject) => {
-      window.setTimeout(() => reject(new Error('La conexión tardó demasiado.')), 12000);
+      window.setTimeout(
+        () => reject(new Error('La conexión tardó demasiado.')),
+        12000
+      );
     });
+
     const data = await Promise.race([query, timeout]);
 
     products = data || [];
     catalogIsFresh = true;
-    try { localStorage.setItem(productsCacheKey, JSON.stringify(products)); } catch { /* El catálogo sigue disponible en memoria si el almacenamiento está lleno. */ }
-    status.textContent = products.length ? `${products.length} producto${products.length === 1 ? '' : 's'} disponible${products.length === 1 ? '' : 's'}` : 'Catálogo actualizado';
+
+    try {
+      localStorage.setItem(productsCacheKey, JSON.stringify(products));
+    } catch {}
+
+    status.textContent = products.length
+      ? `${products.length} producto${products.length === 1 ? '' : 's'} disponible${products.length === 1 ? '' : 's'}`
+      : 'Catálogo actualizado';
+
     updateCart();
     return true;
+
   } catch (error) {
     console.error('No se pudo cargar el catálogo:', error);
+
     if (loadCachedCatalog()) return false;
+
     showCatalogueProblem(
       'No pudimos conectar con el catálogo.',
-      'No se pudo consultar el catálogo. Comprueba la configuración de Netlify y vuelve a intentarlo.'
+      'No se pudo consultar el catálogo. Comprueba la conexión e intenta nuevamente.'
     );
+
     return false;
   }
 }

@@ -5,3 +5,6 @@
 
 /dist/
 /netlify.env
+
+# Local Netlify folder
+.netlify

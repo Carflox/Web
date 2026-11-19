@@ -13,43 +13,113 @@ export function assertConfigured() { if (!serviceKey) throw new Error('Configura
 
 export async function sb(path, options = {}) {
   assertConfigured();
+
   const headers = new Headers(options.headers || {});
   headers.set('apikey', serviceKey);
   headers.set('Authorization', `Bearer ${serviceKey}`);
-  if (options.body !== undefined && !(options.body instanceof ArrayBuffer) && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
-  const response = await fetch(`${supabaseUrl}${path}`, { ...options, headers });
+
+  if (
+    options.body !== undefined &&
+    !(options.body instanceof ArrayBuffer) &&
+    !headers.has('Content-Type')
+  ) {
+    headers.set('Content-Type', 'application/json');
+  }
+
+  const response = await fetch(`${supabaseUrl}${path}`, {
+    ...options,
+    headers
+  });
+
   const text = await response.text();
   let body = null;
-  try { body = text ? JSON.parse(text) : null; } catch { body = text; }
-  if (!response.ok) {
-    const message = body && typeof body === 'object' ? (body.message || body.error_description || body.error || body.hint) : body;
-    throw Object.assign(new Error(message || `Supabase respondió ${response.status}.`), { status: response.status });
+
+  try {
+    body = text ? JSON.parse(text) : null;
+  } catch {
+    body = text;
   }
+
+  if (!response.ok) {
+    const message =
+      body && typeof body === 'object'
+        ? (body.message || body.error_description || body.error || body.hint)
+        : body;
+
+    throw Object.assign(
+      new Error(message || `Supabase respondió ${response.status}.`),
+      { status: response.status }
+    );
+  }
+
   return { body, response };
 }
 
 const encode = value => Buffer.from(value).toString('base64url');
+
 export function createSession(email) {
   const secret = process.env.SESSION_SECRET || '';
   if (!secret) throw new Error('Configura SESSION_SECRET en Netlify.');
+
   const now = Math.floor(Date.now() / 1000);
   const head = encode(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
-  const payload = encode(JSON.stringify({ sub: email, iat: now, exp: now + 60 * 60 * 24 * 14 }));
+  const payload = encode(JSON.stringify({
+    sub: email,
+    iat: now,
+    exp: now + 60 * 60 * 24 * 14
+  }));
+
   const unsigned = `${head}.${payload}`;
-  return `${unsigned}.${createHmac('sha256', secret).update(unsigned).digest('base64url')}`;
+
+  return `${unsigned}.${createHmac('sha256', secret)
+    .update(unsigned)
+    .digest('base64url')}`;
 }
+
 export function verifySession(request) {
-  const token = (request.headers.get('authorization') || '').replace(/^Bearer\s+/i, '').trim();
+  const token = (request.headers.get('authorization') || '')
+    .replace(/^Bearer\s+/i, '')
+    .trim();
+
   const [head, payload, signature, extra] = token.split('.');
-  if (!head || !payload || !signature || extra || !process.env.SESSION_SECRET) return null;
-  const expected = createHmac('sha256', process.env.SESSION_SECRET).update(`${head}.${payload}`).digest();
+
+  if (!head || !payload || !signature || extra || !process.env.SESSION_SECRET) {
+    return null;
+  }
+
+  const expected = createHmac('sha256', process.env.SESSION_SECRET)
+    .update(`${head}.${payload}`)
+    .digest();
+
   const actual = Buffer.from(signature, 'base64url');
-  if (expected.length !== actual.length || !timingSafeEqual(expected, actual)) return null;
-  try { const claims = JSON.parse(Buffer.from(payload, 'base64url').toString()); return claims.sub && claims.exp > Date.now() / 1000 ? claims : null; } catch { return null; }
+
+  if (expected.length !== actual.length || !timingSafeEqual(expected, actual)) {
+    return null;
+  }
+
+  try {
+    const claims = JSON.parse(Buffer.from(payload, 'base64url').toString());
+
+    return claims.sub && claims.exp > Date.now() / 1000 ? claims : null;
+  } catch {
+    return null;
+  }
 }
+
 export function requireAdmin(request) {
   const claims = verifySession(request);
-  if (!claims || claims.sub.toLowerCase() !== (process.env.ADMIN_EMAIL || '').trim().toLowerCase()) throw Object.assign(new Error('Sesión vencida. Ingresa nuevamente al panel.'), { status: 401 });
+
+  if (
+    !claims ||
+    claims.sub.toLowerCase() !==
+      (process.env.ADMIN_EMAIL || '').trim().toLowerCase()
+  ) {
+    throw Object.assign(
+      new Error('Sesión vencida. Ingresa nuevamente al panel.'),
+      { status: 401 }
+    );
+  }
+
   return claims;
 }
 export function passwordsMatch(candidate, expected) {

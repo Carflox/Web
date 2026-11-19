@@ -5,11 +5,13 @@ alter table public.products
 
 update public.products
 set category = case
-  when lower(coalesce(name, '') || ' ' || coalesce(description, '')) ~ '(pestañ|lash|r[ií]mel|ceja|eyelash|cluster)' then 'pestanas'
+  when lower(coalesce(name, '') || ' ' || coalesce(description, '')) ~ '(libro|book)' then 'libros'
+  when lower(coalesce(name, '') || ' ' || coalesce(description, '')) ~ '(^|[^a-z])kits?([^a-z]|$)' then 'kits'
+  when lower(coalesce(name, '') || ' ' || coalesce(description, '')) ~ '(set|racimos|pestañ|lash|r[ií]mel|ceja|eyelash|cluster)' then 'set'
   when lower(coalesce(name, '') || ' ' || coalesce(description, '')) ~ '(maquill|labial|base |corrector|rubor|sombra|delineador|polvo)' then 'maquillaje'
   else 'accesorios'
 end
-where category is null or category not in ('pestanas', 'maquillaje', 'accesorios');
+where category is null or category not in ('libros', 'set', 'kits', 'maquillaje', 'accesorios');
 
 alter table public.products
   alter column category set default 'accesorios',
@@ -24,6 +26,6 @@ begin
   ) then
     alter table public.products
       add constraint products_category_allowed
-      check (category in ('pestanas', 'maquillaje', 'accesorios'));
+      check (category in ('libros', 'set', 'kits', 'maquillaje', 'accesorios'));
   end if;
 end $$;

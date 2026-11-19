@@ -88,7 +88,9 @@ La base de datos y el almacenamiento de imágenes siguen en el proyecto Supabase
 1. En Netlify deja **Base directory** vacío y **Build command** como `npm run build`; **Publish directory** es `dist` y **Functions directory** es `netlify/functions` (también están en `netlify.toml`).
 2. En variables de entorno de Netlify configura `SUPABASE_SERVICE_ROLE_KEY`, `ADMIN_EMAIL`, `ADMIN_PASSWORD` y `SESSION_SECRET`. `SUPABASE_URL` es opcional porque el proyecto ya trae su URL pública configurada. Para recuperación de contraseña agrega `SMTP_USER` y `SMTP_APP_PASSWORD`; `SMTP_HOST` y `SMTP_PORT` son opcionales. La URL y bucket de imágenes se leen del archivo público de configuración.
 3. Ejecuta una vez `supabase/netlify-backend.sql` en el SQL Editor del proyecto Supabase. Crea las tablas privadas de credenciales/restablecimiento y la función que reserva stock de forma atómica.
-4. Sube los cambios a la rama `main` conectada a Netlify para que se compile y publique el sitio y sus funciones.
+4. Para mantener separado el historial de Finanzas del catálogo, ejecuta `supabase/add-finance-product-name-snapshot.sql` después de `supabase/add-product-cost-and-finance.sql`. Los movimientos nuevos guardan el nombre del producto del momento y editar el costo unitario del catálogo no crea ni cambia movimientos financieros.
+5. Si Supabase rechaza cambios de categoría, ejecuta `supabase/fix-product-categories.sql`; deja permitidas las mismas cinco categorías del panel y convierte categorías antiguas incompatibles.
+6. Sube los cambios a la rama `main` conectada a Netlify para que se compile y publique el sitio y sus funciones.
 
 ### Conservar el catálogo local
 
