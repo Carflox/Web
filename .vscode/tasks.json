@@ -2,13 +2,22 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "Iniciar sitio y funciones (Netlify)",
+      "label": "Compilar YC NICE LADY (Appwrite)",
       "type": "shell",
-      "command": "npx netlify dev",
-      "options": { "cwd": "${workspaceFolder}" },
-      "isBackground": true,
+      "command": "node build.mjs",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
       "problemMatcher": [],
-      "presentation": { "reveal": "always", "panel": "dedicated", "clear": false }
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true
+      }
     }
   ]
 }

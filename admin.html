@@ -6,135 +6,927 @@
   <base href="/">
   <meta name="robots" content="noindex, nofollow">
   <meta name="referrer" content="no-referrer">
+
   <script>
     (() => {
       const url = new URL(window.location.href);
       const email = url.searchParams.get('email');
       const hadPassword = url.searchParams.has('password');
+
       if (!email && !hadPassword) return;
 
       url.searchParams.delete('email');
       url.searchParams.delete('password');
-      window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`);
+
+      window.history.replaceState(
+        null,
+        '',
+        `${url.pathname}${url.search}${url.hash}`
+      );
 
       try {
-        if (email) sessionStorage.setItem('yc-nice-lady-login-email', email);
-        sessionStorage.setItem('yc-nice-lady-login-url-warning', 'true');
-      } catch { /* El formulario sigue disponible si el navegador bloquea el almacenamiento. */ }
+        if (email) {
+          sessionStorage.setItem('yc-nice-lady-login-email', email);
+        }
+
+        sessionStorage.setItem(
+          'yc-nice-lady-login-url-warning',
+          'true'
+        );
+      } catch {
+        /* El formulario continúa disponible si el almacenamiento está bloqueado. */
+      }
     })();
   </script>
+
   <title>Administrar productos | YC NICE LADY</title>
+
   <link rel="icon" type="image/png" href="img/logo-transparent.png?v=20261114-1">
   <link rel="stylesheet" href="css/admin.css?v=finance-supplier-20261115-1">
 </head>
+
 <body>
+
   <header class="admin-header">
-    <a href="index.html" class="admin-brand"><img src="img/logo-transparent.png?v=20261114-1" alt=""><span>YC NICE LADY</span></a>
+    <a href="index.html" class="admin-brand">
+      <img src="img/logo-transparent.png?v=20261114-1" alt="">
+      <span>YC NICE LADY</span>
+    </a>
+
     <a href="index.html" class="back-to-store">Ver tienda ↗</a>
   </header>
 
   <main class="admin-main">
+
+    <!-- LOGIN -->
     <section class="login-card" id="loginView" aria-labelledby="loginTitle">
+
       <p class="eyebrow">Acceso privado</p>
       <h1 id="loginTitle">Administrar productos</h1>
+
       <form id="loginForm" class="form-stack">
-        <label for="adminEmail">Correo electrónico<input id="adminEmail" type="email" name="email" autocomplete="email" required></label>
+
+        <label for="adminEmail">
+          Correo electrónico
+          <input
+            id="adminEmail"
+            type="email"
+            name="email"
+            autocomplete="email"
+            required
+          >
+        </label>
+
         <label for="adminPassword">Contraseña</label>
+
         <div class="password-field">
-          <input id="adminPassword" type="password" name="password" autocomplete="current-password" required>
-          <button id="toggleAdminPassword" class="password-toggle" type="button" aria-controls="adminPassword" aria-label="Mostrar contraseña" aria-pressed="false">Ver</button>
+          <input
+            id="adminPassword"
+            type="password"
+            name="password"
+            autocomplete="current-password"
+            required
+          >
+
+          <button
+            id="toggleAdminPassword"
+            class="password-toggle"
+            type="button"
+            aria-controls="adminPassword"
+            aria-label="Mostrar contraseña"
+            aria-pressed="false"
+          >Ver</button>
         </div>
+
         <button class="button" type="submit">Ingresar</button>
+
       </form>
-      <p class="form-message" id="loginMessage" role="alert" aria-live="assertive"></p>
-      <button class="text-button" id="showPasswordReset" type="button">Olvidé mi contraseña</button>
-      <section id="passwordResetView" class="password-reset" hidden aria-labelledby="passwordResetTitle">
+
+      <output
+        class="form-message"
+        id="loginMessage"
+        aria-live="assertive"
+      ></output>
+
+      <button class="text-button" id="showPasswordReset" type="button">
+        Olvidé mi contraseña
+      </button>
+
+      <!-- RECUPERACIÓN DE CONTRASEÑA -->
+      <section
+        id="passwordResetView"
+        class="password-reset"
+        hidden
+        aria-labelledby="passwordResetTitle"
+      >
+
         <h2 id="passwordResetTitle">Recuperar acceso</h2>
-        <p>Te enviaremos un código de un solo uso al correo administrador.</p>
+
+        <p>
+          Te enviaremos un código de un solo uso al correo administrador.
+        </p>
+
         <form id="resetRequestForm" class="form-stack">
-          <label for="resetEmail">Correo administrador<input id="resetEmail" type="email" autocomplete="email" required></label>
-          <button class="button" type="submit">Enviar código por Gmail</button>
+
+          <label for="resetEmail">
+            Correo administrador
+            <input
+              id="resetEmail"
+              type="email"
+              autocomplete="email"
+              required
+            >
+          </label>
+
+          <button class="button" type="submit">
+            Enviar código por Gmail
+          </button>
+
         </form>
+
         <form id="resetConfirmForm" class="form-stack" hidden>
-          <label for="resetCode">Código de 6 dígitos<input id="resetCode" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" required></label>
-          <label for="newAdminPassword">Nueva contraseña (mínimo 12 caracteres)<input id="newAdminPassword" type="password" minlength="12" maxlength="256" autocomplete="new-password" required></label>
-          <label for="confirmAdminPassword">Repite la nueva contraseña<input id="confirmAdminPassword" type="password" minlength="12" maxlength="256" autocomplete="new-password" required></label>
-          <button class="button" type="submit">Cambiar contraseña</button>
+
+          <label for="resetCode">
+            Código de 6 dígitos
+            <input
+              id="resetCode"
+              inputmode="numeric"
+              pattern="[0-9]{6}"
+              maxlength="6"
+              autocomplete="one-time-code"
+              required
+            >
+          </label>
+
+          <label for="newAdminPassword">
+            Nueva contraseña (mínimo 12 caracteres)
+            <input
+              id="newAdminPassword"
+              type="password"
+              minlength="12"
+              maxlength="256"
+              autocomplete="new-password"
+              required
+            >
+          </label>
+
+          <label for="confirmAdminPassword">
+            Repite la nueva contraseña
+            <input
+              id="confirmAdminPassword"
+              type="password"
+              minlength="12"
+              maxlength="256"
+              autocomplete="new-password"
+              required
+            >
+          </label>
+
+          <button class="button" type="submit">
+            Cambiar contraseña
+          </button>
+
         </form>
-        <p class="form-message" id="resetMessage" role="status" aria-live="polite"></p>
-        <button class="text-button" id="backToLogin" type="button">Volver al inicio de sesión</button>
+
+        <output
+          class="form-message"
+          id="resetMessage"
+          aria-live="polite"
+        ></output>
+
+        <button class="text-button" id="backToLogin" type="button">
+          Volver al inicio de sesión
+        </button>
+
       </section>
+
     </section>
 
+    <!-- ADMINISTRACIÓN -->
     <section id="adminView" hidden>
+
       <div class="admin-intro">
-        <div><p class="eyebrow">Panel privado</p><h1>Tu catálogo</h1><p>Agrega, edita, oculta o elimina productos. Los cambios se reflejarán en la tienda.</p></div>
-        <button class="sign-out" id="signOut" type="button">Cerrar sesión</button>
+
+        <div>
+          <p class="eyebrow">Panel privado</p>
+          <h1>Tu catálogo</h1>
+
+          <p>
+            Agrega, edita, oculta o elimina productos.
+            Los cambios se reflejarán en la tienda.
+          </p>
+        </div>
+
+        <button class="sign-out" id="signOut" type="button">
+          Cerrar sesión
+        </button>
+
       </div>
 
       <div class="admin-layout">
-        <section class="panel product-form-panel" aria-labelledby="formTitle">
-          <div class="panel-heading"><h2 id="formTitle">Nuevo producto</h2><button class="text-button" id="resetProductForm" type="button" hidden>Cancelar edición</button></div>
+
+        <!-- FORMULARIO PRODUCTOS -->
+        <section
+          class="panel product-form-panel"
+          aria-labelledby="formTitle"
+        >
+
+          <div class="panel-heading">
+
+            <h2 id="formTitle">Nuevo producto</h2>
+
+            <button
+              class="text-button"
+              id="resetProductForm"
+              type="button"
+              hidden
+            >
+              Cancelar edición
+            </button>
+
+          </div>
+
           <form id="productForm" class="form-stack">
+
             <input type="hidden" name="id">
             <input type="hidden" name="existingImagePath">
-            <label>Nombre del producto<input type="text" name="name" maxlength="90" required></label>
-            <label>Descripción<textarea name="description" rows="3" maxlength="280" placeholder="Descripción breve del producto"></textarea></label>
-            <label>Categoría<select name="category" required><option value="libros">Libros</option><option value="set">Set</option><option value="kits">Kits</option><option value="maquillaje">Maquillajes</option><option value="accesorios" selected>Accesorios</option></select></label>
-            <fieldset class="kit-editor" id="kitEditor" hidden><legend>Kit del producto</legend><p>Agrega complementos para Libros o Set. El precio indicado se suma al precio base; el accesorio vinculado descuenta su stock.</p><div class="kit-editor-items" id="kitEditorItems"></div><button class="text-button" id="addKitItem" type="button">+ Agregar complemento</button></fieldset>
-            <label>Proveedor<input type="text" name="supplier" maxlength="120" autocomplete="organization" placeholder="Ej. Distribuidora Bella"><small>Proveedor habitual de este producto; solo se muestra en el panel administrativo.</small></label>
+
+            <label>
+              Nombre del producto
+              <input type="text" name="name" maxlength="90" required>
+            </label>
+
+            <label>
+              Descripción
+              <textarea
+                name="description"
+                rows="3"
+                maxlength="280"
+                placeholder="Descripción breve del producto"
+              ></textarea>
+            </label>
+
+            <label>
+              Categoría
+              <select name="category" required>
+                <option value="libros">Libros</option>
+                <option value="set">Set</option>
+                <option value="kits">Kits</option>
+                <option value="maquillaje">Maquillajes</option>
+                <option value="accesorios" selected>Accesorios</option>
+              </select>
+            </label>
+
+            <!-- KIT -->
+            <fieldset class="kit-editor" id="kitEditor" hidden>
+
+              <legend>Kit del producto</legend>
+
+              <p>
+                Agrega complementos para Libros o Set.
+                El precio indicado se suma al precio base;
+                el accesorio vinculado descuenta su stock.
+              </p>
+
+              <div class="kit-editor-items" id="kitEditorItems"></div>
+
+              <button class="text-button" id="addKitItem" type="button">
+                + Agregar complemento
+              </button>
+
+            </fieldset>
+
+            <label>
+              Proveedor
+              <input
+                type="text"
+                name="supplier"
+                maxlength="120"
+                autocomplete="organization"
+                placeholder="Ej. Distribuidora Bella"
+              >
+
+              <small>
+                Proveedor habitual de este producto;
+                solo se muestra en el panel administrativo.
+              </small>
+            </label>
+
+            <!-- PRECIOS Y STOCK -->
             <div class="form-columns product-pricing">
-              <label>Precio de venta (S/)<input type="number" name="price" min="0" step="0.01" inputmode="decimal" required></label>
-              <label>Precio de costo (S/)<input type="number" name="cost_price" min="0" step="0.01" inputmode="decimal" value="0" required><small>Lo que pagas por cada unidad.</small></label>
-              <label>Stock disponible<input type="number" name="stock" min="0" step="1" inputmode="numeric" required></label>
+
+              <label>
+                Precio de venta (S/)
+                <input
+                  type="number"
+                  name="price"
+                  min="0"
+                  step="0.01"
+                  inputmode="decimal"
+                  required
+                >
+              </label>
+
+              <label>
+                Precio de costo (S/)
+                <input
+                  type="number"
+                  name="cost_price"
+                  min="0"
+                  step="0.01"
+                  inputmode="decimal"
+                  value="0"
+                  required
+                >
+
+                <small>Lo que pagas por cada unidad.</small>
+              </label>
+
+              <label>
+                Stock disponible
+                <input
+                  type="number"
+                  name="stock"
+                  min="0"
+                  step="1"
+                  inputmode="numeric"
+                  required
+                >
+              </label>
+
             </div>
-            <label class="file-label">Foto del producto<input type="file" name="image" accept="image/jpeg,image/png,image/webp"><small>La optimizamos a WebP, máximo 1280 px, para que cargue rápido. Original hasta 20 MB.</small></label>
-            <label class="switch-label"><input type="checkbox" name="isActive" checked><span>Visible para clientes</span></label>
-            <button class="button" id="saveProduct" type="submit">Guardar producto</button>
+
+            <!-- IMAGEN -->
+            <label class="file-label">
+              Foto del producto
+
+              <input
+                type="file"
+                name="image"
+                accept="image/jpeg,image/png,image/webp"
+              >
+
+              <small>
+                La optimizamos a WebP, máximo 1280 px,
+                para que cargue rápido. Original hasta 20 MB.
+              </small>
+            </label>
+
+            <label class="switch-label">
+              <input type="checkbox" name="isActive" checked>
+              <span>Visible para clientes</span>
+            </label>
+
+            <button class="button" id="saveProduct" type="submit">
+              Guardar producto
+            </button>
+
           </form>
-          <p class="form-message" id="productMessage" role="status"></p>
+
+          <output
+            class="form-message"
+            id="productMessage"
+            aria-live="polite"
+          ></output>
+
         </section>
 
-        <section class="panel products-list-panel" aria-labelledby="listTitle">
-          <div class="panel-heading"><div><h2 id="listTitle">Productos creados</h2><p id="productsSummary">Cargando…</p></div><div class="admin-list-actions"><button class="text-button" id="openAnalytics" type="button">Estadísticas</button><button class="text-button" id="openFinance" type="button">Finanzas</button><button class="text-button" id="refreshProducts" type="button">Actualizar</button></div></div>
-          <label class="admin-search"><span class="sr-only">Buscar productos del catálogo</span><input id="adminProductSearch" type="search" placeholder="Buscar por nombre, descripción o categoría…" autocomplete="off"></label>
-          <p class="admin-order-status" id="adminOrderStatus" role="status">Arrastra los productos para cambiar su orden.</p>
+        <!-- LISTA PRODUCTOS -->
+        <section
+          class="panel products-list-panel"
+          aria-labelledby="listTitle"
+        >
+
+          <div class="panel-heading">
+
+            <div>
+              <h2 id="listTitle">Productos creados</h2>
+              <output id="productsSummary">Cargando…</output>
+            </div>
+
+            <div class="admin-list-actions">
+
+              <button class="text-button" id="openAnalytics" type="button">
+                Estadísticas
+              </button>
+
+              <button class="text-button" id="openFinance" type="button">
+                Finanzas
+              </button>
+
+              <button class="text-button" id="refreshProducts" type="button">
+                Actualizar
+              </button>
+
+            </div>
+
+          </div>
+
+          <label class="admin-search">
+            <span class="sr-only">Buscar productos del catálogo</span>
+
+            <input
+              id="adminProductSearch"
+              type="search"
+              placeholder="Buscar por nombre, descripción o categoría…"
+              autocomplete="off"
+            >
+          </label>
+
+          <output
+            class="admin-order-status"
+            id="adminOrderStatus"
+            aria-live="polite"
+          >
+            Arrastra los productos para cambiar su orden.
+          </output>
+
           <div class="admin-products" id="adminProducts"></div>
+
         </section>
+
       </div>
+
     </section>
-    <dialog class="admin-analytics" id="adminFinance" aria-labelledby="financeTitle">
-      <div class="analytics-head"><div><p class="eyebrow">Control del negocio</p><h2 id="financeTitle">Finanzas</h2><p id="financeStatus" role="status">Ventas, compras y gastos se guardan de forma segura en la nube.</p></div><button class="admin-image-preview-close" id="closeFinance" type="button" aria-label="Cerrar finanzas">×</button></div>
-      <div class="finance-content">
-        <div class="analytics-cards" id="financeTotals"></div>
-        <section class="analytics-history" aria-labelledby="financePendingTitle"><h3 id="financePendingTitle">Pedidos por WhatsApp por confirmar</h3><p id="financePendingStatus">Cargando pedidos…</p><div class="analytics-table-wrap"><table><thead><tr><th>Fecha y hora del pedido</th><th>Producto</th><th>Cantidad</th><th>Acción</th></tr></thead><tbody id="financePendingWhatsapp"><tr><td colspan="4">Cargando…</td></tr></tbody></table></div></section>
-        <div class="finance-forms">
-          <form id="financeSaleForm" class="finance-form"><h3>Registrar venta confirmada</h3><input name="analytics_event_id" type="hidden"><input name="product_name" type="hidden"><label>Fecha y hora de la venta<input name="created_at" type="datetime-local" required></label><label>Producto vendido<select name="product_id" id="financeSaleProduct"><option value="">Venta general</option></select></label><div class="form-columns"><label>Cantidad<input name="quantity" type="number" min="1" step="1" value="1" required></label><label>Descripción<input name="description" maxlength="160" placeholder="Ej. Pedido confirmado" required></label></div><label>Precio de venta por unidad (S/)<input name="unit_price" type="number" min="0.01" step="0.01" required></label><label>Total recibido (S/)<input name="amount" type="number" min="0.01" step="0.01" required></label><small>Revisa el pedido y el importe antes de confirmar la venta. Los costos y proveedores se registran en su propia sección.</small><p class="finance-note">Los clics de WhatsApp aparecen como pedidos pendientes. Solo al guardar una venta confirmada se suma a ventas e ingresos.</p><button class="button" type="submit">Guardar venta confirmada</button></form>
-          <form id="financeExpenseForm" class="finance-form"><input name="product_name" type="hidden"><h3>Registrar costo o gasto</h3><label>Fecha y hora<input name="created_at" type="datetime-local" required></label><label>Descripción<input name="description" maxlength="160" placeholder="Ej. Compra de 10 kits, gasolina, delivery" required></label><label>Tipo<select name="category" required><option value="productos">Compra a proveedor / inventario</option><option value="delivery">Delivery pagado</option><option value="gasolina">Gasolina</option><option value="material_moto">Materiales de moto</option><option value="empaque">Empaques</option><option value="otros">Otros gastos operativos</option></select></label><div id="financeInventoryProductWrap"><label>Producto comprado<select name="product_id" id="financeExpenseProduct"><option value="">Compra general / varios</option></select></label><small>Al elegir un producto, se cargará su proveedor habitual si lo registraste en el catálogo.</small></div><label>Proveedor (obligatorio para compras de inventario)<input name="supplier" maxlength="120" placeholder="Ej. Distribuidora Bella"></label><label>Monto pagado (S/)<input name="amount" type="number" min="0.01" step="0.01" required></label><small>Las compras guardan producto y proveedor en Finanzas; los demás gastos no se mezclan con ventas.</small><button class="button" type="submit">Guardar costo o gasto</button></form>
+
+    <!-- FINANZAS -->
+    <dialog
+      class="admin-analytics"
+      id="adminFinance"
+      aria-labelledby="financeTitle"
+    >
+
+      <div class="analytics-head">
+
+        <div>
+          <p class="eyebrow">Control del negocio</p>
+          <h2 id="financeTitle">Finanzas</h2>
+
+          <output id="financeStatus" aria-live="polite">
+            Ventas, compras y gastos se guardan de forma segura en la nube.
+          </output>
         </div>
-        <div class="analytics-charts finance-charts"><section><h3>Ventas confirmadas por día</h3><div id="financeTrendChart" class="analytics-chart"></div></section><section><h3>Costos por proveedor y tipo</h3><div id="financeSupplierChart" class="analytics-chart"></div></section></div>
-        <section class="analytics-history"><h3>Estadísticas y ventas por producto</h3><p id="financeProductPerformanceStatus">Comparando interacción del catálogo con ventas registradas.</p><div class="analytics-table-wrap"><table><thead><tr><th>Producto</th><th>Agregado al carrito</th><th>Clics WhatsApp</th><th>Unidades vendidas</th><th>Ingresos</th></tr></thead><tbody id="financeProductPerformance"></tbody></table></div></section>
-        <section class="analytics-history"><h3>Productos con nombres o fotos similares</h3><p id="similarProductsStatus">Revisaremos el catálogo público al abrir Finanzas. Este informe es informativo y no bloquea el guardado.</p><div class="analytics-table-wrap"><table><thead><tr><th>Producto e imagen</th><th>Coincidencia</th><th>Carrito</th><th>WhatsApp</th><th>Unidades vendidas</th><th>Ingresos</th></tr></thead><tbody id="similarProductsLedger"></tbody></table></div></section>
-        <section class="analytics-history"><h3>Registro de ventas confirmadas</h3><div class="analytics-table-wrap"><table><thead><tr><th>Fecha y hora</th><th>Producto</th><th>Cantidad</th><th>Precio de venta c/u</th><th>Ingreso total</th><th></th></tr></thead><tbody id="financeSalesLedger"></tbody></table></div></section>
-        <section class="analytics-history"><h3>Registro de costos, proveedores y gastos</h3><div class="analytics-table-wrap"><table><thead><tr><th>Fecha y hora</th><th>Tipo de costo</th><th>Producto comprado</th><th>Proveedor</th><th>Descripción</th><th>Monto pagado</th><th></th></tr></thead><tbody id="financeExpenseLedger"></tbody></table></div></section>
+
+        <button
+          class="admin-image-preview-close"
+          id="closeFinance"
+          type="button"
+          aria-label="Cerrar finanzas"
+        >×</button>
+
       </div>
+
+      <div class="finance-content">
+
+        <div class="analytics-cards" id="financeTotals"></div>
+
+        <!-- PEDIDOS PENDIENTES -->
+        <section
+          class="analytics-history"
+          aria-labelledby="financePendingTitle"
+        >
+
+          <h3 id="financePendingTitle">
+            Pedidos por WhatsApp por confirmar
+          </h3>
+
+          <output id="financePendingStatus">Cargando pedidos…</output>
+
+          <div class="analytics-table-wrap">
+
+            <table>
+              <thead>
+                <tr>
+                  <th>Fecha y hora del pedido</th>
+                  <th>Producto</th>
+                  <th>Cantidad</th>
+                  <th>Acción</th>
+                </tr>
+              </thead>
+
+              <tbody id="financePendingWhatsapp">
+                <tr>
+                  <td colspan="4">Cargando…</td>
+                </tr>
+              </tbody>
+            </table>
+
+          </div>
+
+        </section>
+
+        <!-- REGISTRAR VENTA -->
+        <div class="finance-forms">
+
+          <form id="financeSaleForm" class="finance-form">
+
+            <h3>Registrar venta confirmada</h3>
+
+            <input name="analytics_event_id" type="hidden">
+            <input name="product_name" type="hidden">
+
+            <label>
+              Fecha y hora de la venta
+              <input name="created_at" type="datetime-local" required>
+            </label>
+
+            <label>
+              Producto vendido
+              <select name="product_id" id="financeSaleProduct">
+                <option value="">Venta general</option>
+              </select>
+            </label>
+
+            <div class="form-columns">
+
+              <label>
+                Cantidad
+                <input
+                  name="quantity"
+                  type="number"
+                  min="1"
+                  step="1"
+                  value="1"
+                  required
+                >
+              </label>
+
+              <label>
+                Descripción
+                <input
+                  name="description"
+                  maxlength="160"
+                  placeholder="Ej. Pedido confirmado"
+                  required
+                >
+              </label>
+
+            </div>
+
+            <label>
+              Precio de venta por unidad (S/)
+              <input
+                name="unit_price"
+                type="number"
+                min="0.01"
+                step="0.01"
+                required
+              >
+            </label>
+
+            <label>
+              Total recibido (S/)
+              <input
+                name="amount"
+                type="number"
+                min="0.01"
+                step="0.01"
+                required
+              >
+            </label>
+
+            <small>
+              Revisa el pedido y el importe antes de confirmar la venta.
+              Los costos y proveedores se registran en su propia sección.
+            </small>
+
+            <p class="finance-note">
+              Los clics de WhatsApp aparecen como pedidos pendientes.
+              Solo al guardar una venta confirmada se suma a ventas e ingresos.
+            </p>
+
+            <button class="button" type="submit">
+              Guardar venta confirmada
+            </button>
+
+          </form>
+
+          <!-- REGISTRAR GASTOS -->
+          <form id="financeExpenseForm" class="finance-form">
+
+            <input name="product_name" type="hidden">
+
+            <h3>Registrar costo o gasto</h3>
+
+            <label>
+              Fecha y hora
+              <input name="created_at" type="datetime-local" required>
+            </label>
+
+            <label>
+              Descripción
+              <input
+                name="description"
+                maxlength="160"
+                placeholder="Ej. Compra de 10 kits, gasolina, delivery"
+                required
+              >
+            </label>
+
+            <label>
+              Tipo
+              <select name="category" required>
+                <option value="productos">Compra a proveedor / inventario</option>
+                <option value="delivery">Delivery pagado</option>
+                <option value="gasolina">Gasolina</option>
+                <option value="material_moto">Materiales de moto</option>
+                <option value="empaque">Empaques</option>
+                <option value="otros">Otros gastos operativos</option>
+              </select>
+            </label>
+
+            <div id="financeInventoryProductWrap">
+
+              <label>
+                Producto comprado
+                <select name="product_id" id="financeExpenseProduct">
+                  <option value="">Compra general / varios</option>
+                </select>
+              </label>
+
+              <small>
+                Al elegir un producto, se cargará su proveedor habitual
+                si lo registraste en el catálogo.
+              </small>
+
+            </div>
+
+            <label>
+              Proveedor (obligatorio para compras de inventario)
+              <input
+                name="supplier"
+                maxlength="120"
+                placeholder="Ej. Distribuidora Bella"
+              >
+            </label>
+
+            <label>
+              Monto pagado (S/)
+              <input
+                name="amount"
+                type="number"
+                min="0.01"
+                step="0.01"
+                required
+              >
+            </label>
+
+            <small>
+              Las compras guardan producto y proveedor en Finanzas;
+              los demás gastos no se mezclan con ventas.
+            </small>
+
+            <button class="button" type="submit">
+              Guardar costo o gasto
+            </button>
+
+          </form>
+
+        </div>
+
+        <!-- GRÁFICOS -->
+        <div class="analytics-charts finance-charts">
+
+          <section>
+            <h3>Ventas confirmadas por día</h3>
+            <div id="financeTrendChart" class="analytics-chart"></div>
+          </section>
+
+          <section>
+            <h3>Costos por proveedor y tipo</h3>
+            <div id="financeSupplierChart" class="analytics-chart"></div>
+          </section>
+
+        </div>
+
+        <!-- RENDIMIENTO PRODUCTOS -->
+        <section class="analytics-history">
+
+          <h3>Estadísticas y ventas por producto</h3>
+
+          <output id="financeProductPerformanceStatus">
+            Comparando interacción del catálogo con ventas registradas.
+          </output>
+
+          <div class="analytics-table-wrap">
+
+            <table>
+              <thead>
+                <tr>
+                  <th>Producto</th>
+                  <th>Agregado al carrito</th>
+                  <th>Clics WhatsApp</th>
+                  <th>Unidades vendidas</th>
+                  <th>Ingresos</th>
+                </tr>
+              </thead>
+
+              <tbody id="financeProductPerformance"></tbody>
+            </table>
+
+          </div>
+
+        </section>
+
+        <!-- SIMILARES -->
+        <section class="analytics-history">
+
+          <h3>Productos con nombres o fotos similares</h3>
+
+          <output id="similarProductsStatus">
+            Revisaremos el catálogo público al abrir Finanzas.
+            Este informe es informativo y no bloquea el guardado.
+          </output>
+
+          <div class="analytics-table-wrap">
+
+            <table>
+              <thead>
+                <tr>
+                  <th>Producto e imagen</th>
+                  <th>Coincidencia</th>
+                  <th>Carrito</th>
+                  <th>WhatsApp</th>
+                  <th>Unidades vendidas</th>
+                  <th>Ingresos</th>
+                </tr>
+              </thead>
+
+              <tbody id="similarProductsLedger"></tbody>
+            </table>
+
+          </div>
+
+        </section>
+
+        <!-- VENTAS -->
+        <section class="analytics-history">
+
+          <h3>Registro de ventas confirmadas</h3>
+
+          <div class="analytics-table-wrap">
+
+            <table>
+              <thead>
+                <tr>
+                  <th>Fecha y hora</th>
+                  <th>Producto</th>
+                  <th>Cantidad</th>
+                  <th>Precio de venta c/u</th>
+                  <th>Ingreso total</th>
+                  <th></th>
+                </tr>
+              </thead>
+
+              <tbody id="financeSalesLedger"></tbody>
+            </table>
+
+          </div>
+
+        </section>
+
+        <!-- GASTOS -->
+        <section class="analytics-history">
+
+          <h3>Registro de costos, proveedores y gastos</h3>
+
+          <div class="analytics-table-wrap">
+
+            <table>
+              <thead>
+                <tr>
+                  <th>Fecha y hora</th>
+                  <th>Tipo de costo</th>
+                  <th>Producto comprado</th>
+                  <th>Proveedor</th>
+                  <th>Descripción</th>
+                  <th>Monto pagado</th>
+                  <th></th>
+                </tr>
+              </thead>
+
+              <tbody id="financeExpenseLedger"></tbody>
+            </table>
+
+          </div>
+
+        </section>
+
+      </div>
+
     </dialog>
-    <dialog class="admin-analytics" id="adminAnalytics" aria-labelledby="analyticsTitle">
-      <div class="analytics-head"><div><p class="eyebrow">Actividad de la tienda</p><h2 id="analyticsTitle">Estadísticas</h2><p id="analyticsStatus" role="status">Cargando actividad…</p></div><button class="admin-image-preview-close" id="closeAnalytics" type="button" aria-label="Cerrar estadísticas">×</button></div>
+
+    <!-- ESTADÍSTICAS -->
+    <dialog
+      class="admin-analytics"
+      id="adminAnalytics"
+      aria-labelledby="analyticsTitle"
+    >
+
+      <div class="analytics-head">
+
+        <div>
+          <p class="eyebrow">Actividad de la tienda</p>
+          <h2 id="analyticsTitle">Estadísticas</h2>
+
+          <output id="analyticsStatus" aria-live="polite">
+            Cargando actividad…
+          </output>
+        </div>
+
+        <button
+          class="admin-image-preview-close"
+          id="closeAnalytics"
+          type="button"
+          aria-label="Cerrar estadísticas"
+        >×</button>
+
+      </div>
+
       <div class="analytics-content" id="analyticsContent" hidden>
+
         <div class="analytics-cards" id="analyticsCards"></div>
-        <section class="analytics-top-product"><h3>Producto más agregado</h3><div id="topProduct"></div></section>
-        <div class="analytics-charts"><section><h3>Agregar al carrito por hora</h3><div id="cartHourChart" class="analytics-chart"></div></section><section><h3>Clics en pedir por WhatsApp por hora</h3><div id="whatsappHourChart" class="analytics-chart"></div></section></div>
-        <section class="analytics-history chart-section"><h3>Distribución de interacciones</h3><div id="interactionChart" class="analytics-chart"></div></section><section class="analytics-history"><h3>Registro de actividad</h3><p id="analyticsHistorySummary"></p><div class="analytics-table-wrap"><table><thead><tr><th>Fecha y hora</th><th>Evento</th><th>Producto</th><th>Cantidad</th></tr></thead><tbody id="analyticsHistory"></tbody></table></div></section>
+
+        <section class="analytics-top-product">
+          <h3>Producto más agregado</h3>
+          <div id="topProduct"></div>
+        </section>
+
+        <div class="analytics-charts">
+
+          <section>
+            <h3>Agregar al carrito por hora</h3>
+            <div id="cartHourChart" class="analytics-chart"></div>
+          </section>
+
+          <section>
+            <h3>Clics en pedir por WhatsApp por hora</h3>
+            <div id="whatsappHourChart" class="analytics-chart"></div>
+          </section>
+
+        </div>
+
+        <section class="analytics-history chart-section">
+          <h3>Distribución de interacciones</h3>
+          <div id="interactionChart" class="analytics-chart"></div>
+        </section>
+
+        <section class="analytics-history">
+
+          <h3>Registro de actividad</h3>
+
+          <output id="analyticsHistorySummary"></output>
+
+          <div class="analytics-table-wrap">
+
+            <table>
+              <thead>
+                <tr>
+                  <th>Fecha y hora</th>
+                  <th>Evento</th>
+                  <th>Producto</th>
+                  <th>Cantidad</th>
+                </tr>
+              </thead>
+
+              <tbody id="analyticsHistory"></tbody>
+            </table>
+
+          </div>
+
+        </section>
+
       </div>
+
     </dialog>
-    <dialog class="admin-image-preview" id="adminImagePreview" aria-label="Foto ampliada del producto">
-      <button type="button" class="admin-image-preview-close" id="closeAdminImagePreview" aria-label="Cerrar foto ampliada">×</button>
+
+    <!-- VISTA PREVIA -->
+    <dialog
+      class="admin-image-preview"
+      id="adminImagePreview"
+      aria-label="Foto ampliada del producto"
+    >
+
+      <button
+        type="button"
+        class="admin-image-preview-close"
+        id="closeAdminImagePreview"
+        aria-label="Cerrar foto ampliada"
+      >×</button>
+
       <img id="adminPreviewImage" alt="">
       <p id="adminPreviewCaption"></p>
+
     </dialog>
+
   </main>
-  <script src="js/supabase-config.js"></script>
-  <script src="js/admin.js?v=kit-options-20261116-1"></script>
+
+  <!-- CONEXIÓN DEL PANEL -->
+  <!-- Supabase eliminado del HTML -->
+  <!-- Netlify eliminado del HTML -->
+  <!-- La conexión debe realizarse desde admin.js hacia Appwrite -->
+
+  <script src="js/admin.js?v=appwrite-20261119-1" defer></script>
+
 </body>
 </html>

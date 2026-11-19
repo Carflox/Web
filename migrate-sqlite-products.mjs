@@ -3,53 +3,180 @@ import { resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
 const root = process.cwd();
+
+// ==========================================
+// 1. LEER VARIABLES DE APPWRITE
+// ==========================================
+
 const env = {};
-for (const line of (await readFile(resolve(root, '.env'), 'utf8')).split(/\r?\n/)) {
-  const match = line.match(/^\s*([A-Za-z0-9_]+)\s*=\s*(.*?)\s*$/);
-  if (match && !match[1].startsWith('#')) env[match[1]] = match[2].replace(/^['"]|['"]$/g, '');
+const envFile = await readFile(resolve(root, 'appwrite.env'), 'utf8');
+
+for (const line of envFile.split(/\r?\n/)) {
+  const trimmedLine = line.trim();
+
+  if (!trimmedLine || trimmedLine.startsWith('#')) {
+    continue;
+  }
+
+  const separator = trimmedLine.indexOf('=');
+
+  if (separator < 1) {
+    continue;
+  }
+
+  const name = trimmedLine.slice(0, separator).trim();
+  const value = trimmedLine.slice(separator + 1).trim();
+
+  env[name] = value.replace(/^["']|["']$/g, '');
 }
-const db = new DatabaseSync(resolve(root, 'data/store.sqlite3'), { readOnly: true });
-const products = db.prepare(`select id,name,description,category,price,cost_price,stock,image_path,is_active,sort_order,created_at from products`).all()
-  .map(row => ({ ...row, is_active: Boolean(row.is_active) }));
-const savedAdmin = db.prepare(`select salt,password_hash,updated_at from admin_credentials where id=1`).get() || null;
+
+// ==========================================
+// 2. VALIDAR CONFIGURACIÓN
+// ==========================================
+
+const endpoint = (env.APPWRITE_ENDPOINT || 'https://sfo.cloud.appwrite.io/v1')
+  .replace(/\/$/, '');
+
+const project = env.APPWRITE_PROJECT_ID;
+const key = env.APPWRITE_API_KEY;
+const database = env.APPWRITE_DATABASE_ID;
+const table = env.APPWRITE_PRODUCTS_TABLE_ID;
+
+if (!project || !key || !database || !table) {
+  throw new Error('Falta configuración de Appwrite en appwrite.env.');
+}
+
+const baseUrl =
+  `${endpoint}/tablesdb/${encodeURIComponent(database)}` +
+  `/tables/${encodeURIComponent(table)}/rows`;
+
+// ==========================================
+// 3. LEER PRODUCTOS SQLITE
+// ==========================================
+
+const db = new DatabaseSync(resolve(root, 'data/store.sqlite3'), {
+  readOnly: true
+});
+
+const products = db.prepare(`
+  SELECT
+    id,
+    name,
+    description,
+    category,
+    price,
+    cost_price,
+    stock,
+    image_path,
+    is_active,
+    sort_order,
+    created_at,
+    kit_items
+  FROM products
+`).all();
+
 db.close();
 
-const target = String(env.SUPABASE_URL || '').replace(/\/$/, '');
-console.log(`Productos locales encontrados: ${products.length}`);
-console.log(`Contraseña de administrador restablecida guardada: ${savedAdmin ? 'sí (solo se copia su hash)' : 'no'}`);
-console.log(`Destino configurado: ${target || '(falta SUPABASE_URL)'}`);
-if (!process.argv.includes('--confirm-transfer')) {
-  console.log('Vista previa solamente. Tras autorizar el envío, ejecuta: node migrate-sqlite-products.mjs --confirm-transfer');
-  process.exit(0);
-}
-if (!target || !env.SUPABASE_SERVICE_ROLE_KEY) throw new Error('Faltan SUPABASE_URL o SUPABASE_SERVICE_ROLE_KEY en .env.');
+// ==========================================
+// 4. PREPARAR MIGRACIÓN
+// ==========================================
 
-for (let offset = 0; offset < products.length; offset += 100) {
-  const batch = products.slice(offset, offset + 100);
-  const response = await fetch(`${target}/rest/v1/products?on_conflict=id`, {
-    method: 'POST',
-    headers: {
-      apikey: env.SUPABASE_SERVICE_ROLE_KEY,
-      Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
-      'Content-Type': 'application/json',
-      Prefer: 'resolution=merge-duplicates,return=minimal'
-    },
-    body: JSON.stringify(batch)
-  });
-  if (!response.ok) throw new Error(`Supabase rechazó la migración (HTTP ${response.status}). No se borró ningún producto existente.`);
+let migrated = 0;
+let failed = 0;
+
+const headers = {
+  'X-Appwrite-Project': project,
+  'X-Appwrite-Key': key,
+  'Content-Type': 'application/json'
+};
+
+const migrationTasks = products.map(async (product) => {
+  const rowId = String(product.id);
+
+  const data = {
+    name: product.name ?? '',
+    description: product.description ?? '',
+    category: product.category ?? '',
+    price: Number(product.price ?? 0),
+    stock: Number(product.stock ?? 0),
+    image_path: product.image_path ?? '',
+    is_active: Boolean(product.is_active),
+    sort_order: Number(product.sort_order ?? 0),
+    created_at: product.created_at ?? '',
+    kit_items: product.kit_items ?? ''
+  };
+
+  try {
+    const requestUrl = `${baseUrl}/${encodeURIComponent(rowId)}`;
+
+    const response = await fetch(requestUrl, {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify({ data })
+    });
+
+    if (response.ok) {
+      migrated++;
+      console.log(`Actualizado: ${product.name}`);
+      return;
+    }
+
+    if (response.status !== 404) {
+      const errorText = await response.text();
+
+      throw new Error(
+        `HTTP ${response.status}: ${errorText}`
+      );
+    }
+
+    const createResponse = await fetch(baseUrl, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        rowId,
+        data
+      })
+    });
+
+    if (!createResponse.ok) {
+      const createError = await createResponse.text();
+
+      throw new Error(
+        `Error al crear (${createResponse.status}): ${createError}`
+      );
+    }
+
+    migrated++;
+    console.log(`Creado: ${product.name}`);
+  } catch (migrationError) {
+    failed++;
+
+    console.error(
+      `Error con ${product.name}: ${migrationError.message}`
+    );
+  }
+});
+
+// ==========================================
+// 5. EJECUTAR MIGRACIÓN
+// ==========================================
+
+await Promise.all(migrationTasks);
+
+// ==========================================
+// 6. RESULTADO
+// ==========================================
+
+console.log('==========================================');
+console.log('RESULTADO DE MIGRACIÓN');
+console.log('==========================================');
+console.log(`Total de productos: ${products.length}`);
+console.log(`Migrados: ${migrated}`);
+console.log(`Fallidos: ${failed}`);
+console.log('==========================================');
+
+if (failed > 0) {
+  throw new Error(`La migración terminó con ${failed} errores.`);
 }
-if (savedAdmin) {
-  const updatedAt = new Date(Number(savedAdmin.updated_at) * 1000).toISOString();
-  const response = await fetch(`${target}/rest/v1/store_admin_credentials?on_conflict=id`, {
-    method: 'POST',
-    headers: {
-      apikey: env.SUPABASE_SERVICE_ROLE_KEY,
-      Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
-      'Content-Type': 'application/json',
-      Prefer: 'resolution=merge-duplicates,return=minimal'
-    },
-    body: JSON.stringify({ id: 1, salt: savedAdmin.salt, password_hash: savedAdmin.password_hash, updated_at: updatedAt })
-  });
-  if (!response.ok) throw new Error(`No se pudo copiar el hash guardado de la contraseña (HTTP ${response.status}).`);
-}
-console.log(`Migración completada: ${products.length} productos copiados${savedAdmin ? ' y el hash de la contraseña guardada' : ''}. Los registros que no estaban en SQLite no se eliminaron.`);
+
+console.log('Migración completada correctamente.');

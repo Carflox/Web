@@ -1,11 +1,29 @@
+# ==========================================
+# YC NICE LADY - APPWRITE
+# ==========================================
+
+# Variables privadas y secretos
 .env
 .env.*
 !.env.example
+appwrite.env
+
+# Dependencias
 node_modules/
+
+# Compilación
 dist/
-.netlify/
+
+# Git
 .git/
+
+# Configuración local del editor
+.vscode/
+
+# Bases de datos locales
 data/*.sqlite3
 data/*.sqlite3-wal
 data/*.sqlite3-shm
-netlify.env
+
+# Configuración local de Appwrite
+appwrite.local.json
