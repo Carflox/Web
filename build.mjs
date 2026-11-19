@@ -35,6 +35,9 @@ const publicConfig = {
   productsBucket:
     process.env.APPWRITE_PRODUCTS_BUCKET_ID || '',
 
+  appwriteProductsFunctionId:
+    process.env.APPWRITE_PRODUCTS_FUNCTION_ID || '',
+
   whatsappNumber:
     process.env.WHATSAPP_NUMBER || '51930197471'
 };

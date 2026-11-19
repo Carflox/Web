@@ -1,5 +1,5 @@
 const config = window.YCNiceLadyConfig || {};
-const { productsBucket: PRODUCTS_BUCKET, supabaseUrl: SUPABASE_URL, appwriteEndpoint: APPWRITE_ENDPOINT, appwriteProjectId: APPWRITE_PROJECT_ID, whatsappNumber: WHATSAPP_NUMBER = '' } = config;
+const { productsBucket: PRODUCTS_BUCKET, supabaseUrl: SUPABASE_URL, appwriteEndpoint: APPWRITE_ENDPOINT, appwriteProjectId: APPWRITE_PROJECT_ID, appwriteProductsFunctionId: APPWRITE_PRODUCTS_FUNCTION_ID, whatsappNumber: WHATSAPP_NUMBER = '' } = config;
 const storeIsConfigured = true;
 const grid = document.querySelector('#productGrid');
 const status = document.querySelector('#productStatus');
@@ -298,14 +298,18 @@ async function loadProducts({ loading = true } = {}) {
   }
 
   try {
-    const query = fetch('/api/products?is_active=eq.true&order=created_at.desc')
-      .then(async (response) => {
-        const payload = await response.json();
-        if (!response.ok) {
-          throw new Error(payload.message || 'No se pudo consultar el catálogo.');
-        }
-        return payload;
-      });
+    const query = (async () => {
+      if (!APPWRITE_PRODUCTS_FUNCTION_ID || !APPWRITE_ENDPOINT || !APPWRITE_PROJECT_ID) {
+        throw new Error('Falta configurar la Function pública del catálogo en Appwrite.');
+      }
+      const executionUrl = `${APPWRITE_ENDPOINT.replace(/\/+$/, '')}/functions/${encodeURIComponent(APPWRITE_PRODUCTS_FUNCTION_ID)}/executions?async=false`;
+      const response = await fetch(executionUrl, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Appwrite-Project': APPWRITE_PROJECT_ID }, body: JSON.stringify({ data: '{}' }) });
+      const execution = await response.json();
+      if (!response.ok) throw new Error(execution.message || 'No se pudo ejecutar la función de catálogo.');
+      const payload = typeof execution.responseBody === 'string' ? JSON.parse(execution.responseBody) : execution.responseBody;
+      if (!Array.isArray(payload)) throw new Error(payload?.message || 'La función no devolvió una lista de productos.');
+      return payload;
+      })();
 
     const timeout = new Promise((_, reject) => {
       window.setTimeout(

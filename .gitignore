@@ -1,10 +1,11 @@
 .env
 .env.*
 !.env.example
-/data/
-
-/dist/
-/netlify.env
-
-# Local Netlify folder
-.netlify
+node_modules/
+dist/
+.netlify/
+.git/
+data/*.sqlite3
+data/*.sqlite3-wal
+data/*.sqlite3-shm
+netlify.env
