@@ -1323,10 +1323,10 @@ function updateConnectionNotice() {
 window.addEventListener('offline', updateConnectionNotice);
 window.addEventListener('online', updateConnectionNotice);
 
-      async function startPublicStore() {
-        try {
-        await loadProducts();
-    } catch (error) {
+async function startPublicStore() {
+  try {
+    await loadProducts();
+  } catch (error) {
     console.error('Error al iniciar la tienda:', error);
   }
 }
@@ -1339,12 +1339,11 @@ if (
     await navigator.serviceWorker.register('/service-worker.js');
     await navigator.serviceWorker.ready;
   } catch (error) {
-    console.warn('No se pudo habilitar el modo sin conexión:', error);
+    console.warn(
+      'No se pudo habilitar el modo sin conexión:',
+      error
+    );
   }
 }
 
-try {
-  await startPublicStore();
-} catch (error) {
-  console.error('Error al iniciar la tienda:', error);
-}
+await startPublicStore();
