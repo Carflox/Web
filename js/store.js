@@ -9,9 +9,20 @@ const {
   whatsappNumber: WHATSAPP_NUMBER = ''
 } = config;
 
-const storeIsConfigured = true;
+const missingConfig = [
+  ['appwriteEndpoint', APPWRITE_ENDPOINT],
+  ['appwriteProjectId', APPWRITE_PROJECT_ID],
+  ['appwriteProductsFunctionId', APPWRITE_PRODUCTS_FUNCTION_ID],
+  ['appwriteOrdersFunctionId', APPWRITE_ORDERS_FUNCTION_ID],
+  ['productsBucket', PRODUCTS_BUCKET]
+].filter(([, value]) => !value).map(([name]) => name);
+
+if (missingConfig.length) {
+  console.error('Falta en window.YCNiceLadyConfig:', missingConfig.join(', '));
+}
+
 const grid = document.querySelector('#productGrid');
-const status = document.querySelector('#productStatus');
+const productStatusEl = document.querySelector('#productStatus');
 const dialog = document.querySelector('#cartDialog');
 const cartItemsEl = document.querySelector('#cartItems');
 const cartCount = document.querySelector('#cartCount');
@@ -34,6 +45,10 @@ let catalogIsFresh = false;
 const kitSelections = new Map();
 let pendingKitClickTimer = null;
 
+function setStatus(text) {
+  if (productStatusEl) productStatusEl.textContent = text;
+}
+
 function loadCart() {
   try {
     const stored = JSON.parse(localStorage.getItem(cartStorageKey));
@@ -44,7 +59,11 @@ function loadCart() {
 }
 
 function saveCart() {
-  localStorage.setItem(cartStorageKey, JSON.stringify(cart));
+  try {
+    localStorage.setItem(cartStorageKey, JSON.stringify(cart));
+  } catch {
+    // almacenamiento lleno o bloqueado
+  }
 }
 
 function escapeHtml(value = '') {
@@ -68,50 +87,63 @@ function imageUrl(path) {
 
   if (!fileId) return '';
 
-  const query = new URLSearchParams({
-    project: APPWRITE_PROJECT_ID
-  });
+  const query = new URLSearchParams({ project: APPWRITE_PROJECT_ID });
 
   return `${APPWRITE_ENDPOINT.replace(/\/$/, '')}/storage/buckets/${encodeURIComponent(PRODUCTS_BUCKET)}/files/${encodeURIComponent(fileId)}/view?${query}`;
 }
 
-async function executeAppwriteFunction(functionId, data, { timeoutMs = 15000 } = {}) {
+async function executeAppwriteFunction(functionId, data = {}, { timeoutMs = 15000 } = {}) {
   if (!APPWRITE_ENDPOINT || !APPWRITE_PROJECT_ID || !functionId) {
     throw new Error('Falta configurar Appwrite o el ID de la Function.');
   }
 
   const url = `${APPWRITE_ENDPOINT.replace(/\/$/, '')}/functions/${encodeURIComponent(functionId)}/executions`;
-
   const controller = new AbortController();
   const timer = window.setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Appwrite-Project': APPWRITE_PROJECT_ID
-      },
-      body: JSON.stringify({
-        data: JSON.stringify(data || {}),
-        async: false
-      }),
-      signal: controller.signal
-    });
+    let response;
+
+    try {
+      response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Appwrite-Project': APPWRITE_PROJECT_ID
+        },
+        body: JSON.stringify({
+          body: JSON.stringify(data),
+          async: false,
+          method: 'POST',
+          path: '/'
+        }),
+        signal: controller.signal
+      });
+    } catch (error) {
+      throw new Error(
+        error.name === 'AbortError'
+          ? 'La conexión tardó demasiado.'
+          : 'No se pudo conectar con Appwrite.'
+      );
+    }
 
     const execution = await response.json().catch(() => null);
 
     if (!response.ok) {
+      throw new Error(execution?.message || `Appwrite respondió ${response.status}.`);
+    }
+
+    if (String(execution?.status).toLowerCase() !== 'completed') {
       throw new Error(
-        execution?.message ||
-        execution?.responseBody ||
-        `Appwrite respondió ${response.status}.`
+        execution?.errors ||
+        execution?.logs ||
+        'La Function de Appwrite no terminó correctamente.'
       );
     }
 
-    let body = execution?.responseBody ?? execution?.body ?? execution;
+    let body = execution.responseBody;
 
-    if (typeof body === 'string') {
+    if (typeof body === 'string' && body.trim()) {
       try {
         body = JSON.parse(body);
       } catch {
@@ -119,15 +151,10 @@ async function executeAppwriteFunction(functionId, data, { timeoutMs = 15000 } =
       }
     }
 
-    if (
-      execution?.status &&
-      !['completed', 'success'].includes(String(execution.status).toLowerCase())
-    ) {
-      throw new Error(
-        execution?.stderr ||
-        execution?.responseBody ||
-        'La Function de Appwrite no terminó correctamente.'
-      );
+    const code = Number(execution.responseStatusCode || 200);
+
+    if (code >= 400) {
+      throw new Error(body?.message || body?.error || `La Function respondió ${code}.`);
     }
 
     return body;
@@ -137,24 +164,11 @@ async function executeAppwriteFunction(functionId, data, { timeoutMs = 15000 } =
 }
 
 function shortProductPhotoUrl(product) {
-  if (!product?.id || !product.image_path) return '';
-
-  const hex = String(product.id).replaceAll('-', '');
-
-  if (!/^[0-9a-f]{32}$/i.test(hex)) return '';
-
-  const bytes = hex.match(/.{2}/g).map((byte) => Number.parseInt(byte, 16));
-
-  const compactId = btoa(String.fromCodePoint(...bytes))
-  .replaceAll('+', '-')
-  .replaceAll('/', '_')
-  .split('=')[0];
-
-  return `${window.location.origin}/f/${compactId}`;
+  return imageUrl(product?.image_path);
 }
 
 function showCatalogueProblem(title, message) {
-  productStatusEl.textContent = title;
+  setStatus(title);
 
   grid.innerHTML = `
     <div class="catalogue-empty catalogue-problem">
@@ -201,10 +215,7 @@ function trackStoreEvent(eventType, { product = null, quantity = 1 } = {}) {
     product_id: product?.id || null,
     product_name: product?.name ||
       (eventType === 'whatsapp_click' ? 'Pedido por WhatsApp' : 'Producto'),
-    quantity: Math.max(
-      1,
-      Math.min(1000, Math.trunc(Number(quantity) || 1))
-    )
+    quantity: Math.max(1, Math.min(1000, Math.trunc(Number(quantity) || 1)))
   };
 
   executeAppwriteFunction(
@@ -274,6 +285,14 @@ function getCartLine(key, value) {
   };
 }
 
+function normalizeSearchText(value = '') {
+  return String(value)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLocaleLowerCase('es')
+    .trim();
+}
+
 function categoryFor(product) {
   const category = normalizeSearchText(product.category || '');
 
@@ -291,11 +310,11 @@ function categoryFor(product) {
 
   if (/\bkit\b/.test(text)) return 'set';
 
-  if (/racimo|cluster|wispy|volumen|efecto rimel|efecto rímel/.test(text)) {
+  if (/racimo|cluster|wispy|volumen|efecto rimel/.test(text)) {
     return 'set';
   }
 
-  if (/pestañ|lash|rimel|ceja|eyelash/.test(text)) {
+  if (/pestan|lash|rimel|ceja|eyelash/.test(text)) {
     return 'accesorios';
   }
 
@@ -306,16 +325,9 @@ function categoryFor(product) {
   return 'accesorios';
 }
 
-function normalizeSearchText(value = '') {
-  return String(value)
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLocaleLowerCase('es')
-    .trim();
-}
-
 function renderProducts() {
   if (!products.length) {
+    setStatus('Catálogo actualizado');
     grid.innerHTML =
       '<p class="catalogue-empty">Aún no hay productos disponibles. Vuelve pronto ♡</p>';
     return;
@@ -336,14 +348,14 @@ function renderProducts() {
     );
   });
 
-  if (productStatusEl) {
-  if (query || activeCategory !== 'all' || Number(priceMax?.value || 500) < 500) {
-    productStatusEl.textContent = `${visibleProducts.length} de ${products.length} productos disponibles`;
-  } else {
-    const suffix = products.length === 1 ? '' : 's';
-    productStatusEl.textContent = `${products.length} producto${suffix} disponible${suffix}`;
+  if (productStatusEl && catalogIsFresh) {
+    if (query || activeCategory !== 'all' || Number(priceMax?.value || 500) < 500) {
+      setStatus(`${visibleProducts.length} de ${products.length} productos disponibles`);
+    } else {
+      const suffix = products.length === 1 ? '' : 's';
+      setStatus(`${products.length} producto${suffix} disponible${suffix}`);
+    }
   }
-}
 
   if (!visibleProducts.length) {
     grid.innerHTML = `
@@ -379,55 +391,55 @@ function renderProducts() {
     const selected = kitSelections.get(product.id);
 
     const kitItemsMarkup = kitItems.length > 0
-  ? kitItems.map(item => {
-      const accessory =
-        products.find(candidate =>
-          String(candidate.id) === String(item.accessory_product_id)
-        ) ||
-        products.find(candidate =>
-          categoryFor(candidate) === 'accesorios' &&
-          normalizeSearchText(candidate.name) ===
-          normalizeSearchText(item.name)
-        );
+      ? kitItems.map(item => {
+          const accessory =
+            products.find(candidate =>
+              String(candidate.id) === String(item.accessory_product_id)
+            ) ||
+            products.find(candidate =>
+              categoryFor(candidate) === 'accesorios' &&
+              normalizeSearchText(candidate.name) ===
+              normalizeSearchText(item.name)
+            );
 
-      const quantity = Number(selected.get(String(item.id)) || 0);
+          const quantity = Number(selected.get(String(item.id)) || 0);
 
-      const outOfStock = Boolean(
-        accessory && Number(accessory.stock) <= 0
-      );
+          const outOfStock = Boolean(
+            accessory && Number(accessory.stock) <= 0
+          );
 
-      return `<div class="kit-option">
-        <button
-          class="kit-item-button ${quantity > 0 ? 'is-selected' : ''}"
-          type="button"
-          data-kit-item
-          data-product-id="${product.id}"
-          data-kit-id="${escapeHtml(item.id)}"
-          aria-label="Sumar ${escapeHtml(item.name)} al kit"
-          title="${escapeHtml(item.name)}"
-          aria-pressed="${quantity > 0}"
-          ${outOfStock ? 'disabled' : ''}
-        >${escapeHtml(item.name)}</button>
+          return `<div class="kit-option">
+            <button
+              class="kit-item-button ${quantity > 0 ? 'is-selected' : ''}"
+              type="button"
+              data-kit-item
+              data-product-id="${product.id}"
+              data-kit-id="${escapeHtml(item.id)}"
+              aria-label="Sumar ${escapeHtml(item.name)} al kit"
+              title="${escapeHtml(item.name)}"
+              aria-pressed="${quantity > 0}"
+              ${outOfStock ? 'disabled' : ''}
+            >${escapeHtml(item.name)}</button>
 
-        <button
-          class="kit-remove-button"
-          type="button"
-          data-kit-remove
-          data-product-id="${product.id}"
-          data-kit-id="${escapeHtml(item.id)}"
-          aria-label="Quitar una unidad de ${escapeHtml(item.name)}"
-          ${quantity <= 0 ? 'disabled' : ''}
-        >Quitar</button>
-      </div>`;
-    }).join('')
-  : '<p class="kit-empty">Complementos disponibles próximamente.</p>';
+            <button
+              class="kit-remove-button"
+              type="button"
+              data-kit-remove
+              data-product-id="${product.id}"
+              data-kit-id="${escapeHtml(item.id)}"
+              aria-label="Quitar una unidad de ${escapeHtml(item.name)}"
+              ${quantity <= 0 ? 'disabled' : ''}
+            >Quitar</button>
+          </div>`;
+        }).join('')
+      : '<p class="kit-empty">Complementos disponibles próximamente.</p>';
 
-const kitMarkup = hasKitPanel
-  ? `<section class="kit-panel" aria-label="Complementos para ${escapeHtml(product.name)}">
-      <h4>Kit</h4>
-      ${kitItemsMarkup}
-    </section>`
-  : '';
+    const kitMarkup = hasKitPanel
+      ? `<section class="kit-panel" aria-label="Complementos para ${escapeHtml(product.name)}">
+          <h4>Kit</h4>
+          ${kitItemsMarkup}
+        </section>`
+      : '';
 
     return `
       <article class="product product-card">
@@ -539,9 +551,7 @@ function renderCart() {
       const selectedNames = kitSelections
         .filter(item => Number(item.quantity) > 0)
         .map(item =>
-          item.name + (Number(item.quantity) > 1
-            ? ' ×' + item.quantity
-              : '')
+          item.name + (Number(item.quantity) > 1 ? ' ×' + item.quantity : '')
         )
         .join(' + ');
 
@@ -550,9 +560,7 @@ function renderCart() {
           <div>
             <h3>
               ${escapeHtml(product.name)}
-              ${selectedNames
-                ? ` + ${escapeHtml(selectedNames)}`
-                : ''}
+              ${selectedNames ? ` + ${escapeHtml(selectedNames)}` : ''}
             </h3>
             <p>
               ${formatMoney(unitPrice)} c/u · Disponible: ${product.stock}
@@ -621,9 +629,7 @@ function addToCart(id, selections = []) {
     .map(item => `${item.id}:${item.quantity}`)
     .join(',');
 
-  const key = kitSelections.length
-    ? `${id}::${signature}`
-    : id;
+  const key = kitSelections.length ? `${id}::${signature}` : id;
 
   const line = getCartLine(
     key,
@@ -643,10 +649,7 @@ function addToCart(id, selections = []) {
   cartMessage.textContent = '';
   updateCart();
 
-  trackStoreEvent('add_to_cart', {
-    product,
-    quantity: 1
-  });
+  trackStoreEvent('add_to_cart', { product, quantity: 1 });
 
   return true;
 }
@@ -664,13 +667,19 @@ function loadCachedCatalog() {
     products = cachedProducts;
     catalogIsFresh = false;
 
-    productStatusEl.textContent =
-      `Sin conexión · ${products.length} productos guardados (stock por confirmar)`;
+    const offline = !navigator.onLine;
+
+    setStatus(
+      offline
+        ? `Sin conexión · ${products.length} productos guardados (stock por confirmar)`
+        : `Catálogo guardado · ${products.length} productos (stock por confirmar)`
+    );
 
     if (networkNotice) {
       networkNotice.hidden = false;
-      networkNotice.textContent =
-        'Estás sin internet. Puedes explorar el catálogo guardado y preparar el carrito; WhatsApp se habilitará al reconectarte.';
+      networkNotice.textContent = offline
+        ? 'Estás sin internet. Puedes explorar el catálogo guardado y preparar el carrito; WhatsApp se habilitará al reconectarte.'
+        : 'No pudimos conectar con la tienda. Mostramos el catálogo guardado; reintentaremos en un momento.';
     }
 
     updateCart();
@@ -680,11 +689,28 @@ function loadCachedCatalog() {
   }
 }
 
+async function fetchCatalogue() {
+  const payload = await executeAppwriteFunction(
+    APPWRITE_PRODUCTS_FUNCTION_ID,
+    {},
+    { timeoutMs: 15000 }
+  );
+
+  const list = Array.isArray(payload) ? payload : payload?.products;
+
+  if (!Array.isArray(list)) {
+    throw new TypeError(
+      payload?.message || 'El catálogo llegó en un formato inesperado.'
+    );
+  }
+
+  return list;
+}
+
 async function loadProducts({ loading = true } = {}) {
   if (loading) {
-    productStatusEl.textContent = 'Cargando catálogo…';
-    grid.innerHTML =
-      '<p class="catalogue-loading">Cargando productos…</p>';
+    setStatus('Cargando catálogo…');
+    grid.innerHTML = '<p class="catalogue-loading">Cargando productos…</p>';
   }
 
   if (!navigator.onLine) {
@@ -698,98 +724,43 @@ async function loadProducts({ loading = true } = {}) {
     return false;
   }
 
-  try {
-    const query = (async () => {
-      if (
-        !APPWRITE_PRODUCTS_FUNCTION_ID ||
-        !APPWRITE_ENDPOINT ||
-        !APPWRITE_PROJECT_ID
-      ) {
-        throw new Error(
-          'Falta configurar la Function pública del catálogo en Appwrite.'
-        );
-      }
+  let lastError;
 
-      const executionUrl =
-        `${APPWRITE_ENDPOINT.replace(/\/$/, '')}/functions/${encodeURIComponent(APPWRITE_PRODUCTS_FUNCTION_ID)}/executions?async=false`;
-
-      const response = await fetch(executionUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Appwrite-Project': APPWRITE_PROJECT_ID
-        },
-        body: JSON.stringify({ data: '{}' })
-      });
-
-      const execution = await response.json();
-
-      if (!response.ok) {
-        throw new Error(
-          execution.message ||
-          'No se pudo ejecutar la función de catálogo.'
-        );
-      }
-
-      const payload =
-        typeof execution.responseBody === 'string'
-          ? JSON.parse(execution.responseBody)
-          : execution.responseBody;
-
-      if (!Array.isArray(payload)) {
-        throw new TypeError(
-          payload?.message ||
-          'No se pudo cargar el catálogo.'
-        );
-      }
-
-      return payload;
-    })();
-
-    const timeout = new Promise((_, reject) => {
-      window.setTimeout(
-        () => reject(new Error('La conexión tardó demasiado.')),
-        12000
-      );
-    });
-
-    const data = await Promise.race([query, timeout]);
-
-    products = data || [];
-    catalogIsFresh = true;
-
+  for (let attempt = 1; attempt <= 2; attempt++) {
     try {
-      localStorage.setItem(
-        productsCacheKey,
-        JSON.stringify(products)
-      );
-    } catch {}
+      products = await fetchCatalogue();
+      catalogIsFresh = true;
 
-    if (productStatusEl) {
-  if (products.length > 0) {
-    const suffix = products.length === 1 ? '' : 's';
+      try {
+        localStorage.setItem(productsCacheKey, JSON.stringify(products));
+      } catch {
+        // almacenamiento lleno o bloqueado
+      }
 
-    productStatusEl.textContent =
-      `${products.length} producto${suffix} disponible${suffix}`;
-  } else {
-    productStatusEl.textContent = 'Catálogo actualizado';
+      if (networkNotice) networkNotice.hidden = true;
+
+      updateCart();
+      return true;
+    } catch (error) {
+      lastError = error;
+      console.warn(`Catálogo: el intento ${attempt} falló:`, error);
+
+      if (attempt < 2) {
+        await new Promise(resolve => window.setTimeout(resolve, 1200)); // NOSONAR
+      }
+    }
   }
-}
-    updateCart();
-    return true;
 
-  } catch (error) {
-    console.error('No se pudo cargar el catálogo:', error);
+  console.error('No se pudo cargar el catálogo:', lastError);
 
-    if (loadCachedCatalog()) return false;
+  if (loadCachedCatalog()) return false;
 
-    showCatalogueProblem(
-      'No pudimos conectar con el catálogo.',
-      'No se pudo consultar el catálogo. Comprueba la conexión e intenta nuevamente.'
-    );
+  showCatalogueProblem(
+    'No pudimos conectar con el catálogo.',
+    'No se pudo consultar el catálogo. Comprueba la conexión e intenta nuevamente.'
+  );
 
-    return false;
-  }
+  return false;
 }
 
 async function reserveCartStock(entries) {
@@ -821,10 +792,7 @@ async function reserveCartStock(entries) {
   });
 
   const payload = {
-    order_items: [...quantities].map(([id, quantity]) => ({
-      id,
-      quantity
-    }))
+    order_items: [...quantities].map(([id, quantity]) => ({ id, quantity }))
   };
 
   const result = await executeAppwriteFunction(
@@ -834,9 +802,7 @@ async function reserveCartStock(entries) {
   );
 
   if (result?.success === false || result?.ok === false) {
-    throw new Error(
-      result?.message || 'No pudimos reservar el stock.'
-    );
+    throw new Error(result?.message || 'No pudimos reservar el stock.');
   }
 
   return result;
@@ -855,13 +821,6 @@ async function checkout() {
     return;
   }
 
-  checkoutEntries.forEach(({ product, quantity }) =>
-    trackStoreEvent('whatsapp_click', {
-      product,
-      quantity
-    })
-  );
-
   const phone = WHATSAPP_NUMBER.replace(/\D/g, '');
 
   if (!phone) {
@@ -870,17 +829,12 @@ async function checkout() {
     return;
   }
 
+  // Se abre la ventana de inmediato para que el navegador no bloquee el popup.
   const orderWindow = window.open('', '_blank');
 
-  const catalogueUpdated = await loadProducts({
-    loading: false
-  });
+  const catalogueUpdated = await loadProducts({ loading: false });
 
-  if (
-    !catalogueUpdated ||
-    !navigator.onLine ||
-    !catalogIsFresh
-  ) {
+  if (!catalogueUpdated || !navigator.onLine || !catalogIsFresh) {
     cartMessage.textContent =
       'No pudimos confirmar el stock en este momento. Inténtalo nuevamente.';
 
@@ -904,26 +858,24 @@ async function checkout() {
   );
 
   const lines = entries.map(
-  ({ product, quantity, kitSelections, unitPrice }) => {
-    const photo = shortProductPhotoUrl(product);
+    ({ product, quantity, kitSelections, unitPrice }) => {
+      const photo = shortProductPhotoUrl(product);
 
-    const addOns = kitSelections
-      .filter(item => Number(item.quantity) > 0)
-      .map(item =>
-        item.name + (item.quantity > 1
-          ? ' ×' + item.quantity
-          : '')
-      )
-      .join(' + ');
+      const addOns = kitSelections
+        .filter(item => Number(item.quantity) > 0)
+        .map(item =>
+          item.name + (item.quantity > 1 ? ' ×' + item.quantity : '')
+        )
+        .join(' + ');
 
-    return [
-      '_Producto:_ ' + product.name + (addOns ? ' + ' + addOns : ''),
-      `_Cantidad:_ ${quantity} ${quantity === 1 ? 'unidad' : 'unidades'}`,
-      `_Precio:_ ${formatMoney(unitPrice)}`,
-      `_Foto del producto:_ ${photo || 'No disponible'}`
-    ].join('\n');
-  }
-);
+      return [
+        '_Producto:_ ' + product.name + (addOns ? ' + ' + addOns : ''),
+        `_Cantidad:_ ${quantity} ${quantity === 1 ? 'unidad' : 'unidades'}`,
+        `_Precio:_ ${formatMoney(unitPrice)}`,
+        `_Foto del producto:_ ${photo || 'No disponible'}`
+      ].join('\n');
+    }
+  );
 
   const message = [
     'Hola, quiero realizar este pedido en YC NICE LADY:',
@@ -942,6 +894,11 @@ async function checkout() {
   try {
     await reserveCartStock(entries);
 
+    // El pedido se registra solo cuando el stock quedó reservado.
+    entries.forEach(({ product, quantity }) =>
+      trackStoreEvent('whatsapp_click', { product, quantity })
+    );
+
     cart = {};
     saveCart();
 
@@ -957,20 +914,31 @@ async function checkout() {
     } else {
       window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
     }
-
   } catch (error) {
     console.error('No se pudo reservar el pedido:', error);
 
-    cartMessage.textContent = error.message?.includes('stock')
+    cartMessage.textContent = /stock/i.test(error.message || '')
       ? 'El stock cambió antes de confirmar el pedido. Revisa tu carrito.'
       : 'No pudimos reservar el pedido. Inténtalo nuevamente.';
 
     orderWindow?.close();
-
   } finally {
     checkoutButton.disabled = false;
     checkoutButton.textContent = 'Pedir por WhatsApp ↗';
   }
+}
+
+function findAccessory(kitItem) {
+  return (
+    products.find(
+      item => String(item.id) === String(kitItem?.accessory_product_id)
+    ) ||
+    products.find(
+      item =>
+        categoryFor(item) === 'accesorios' &&
+        normalizeSearchText(item.name) === normalizeSearchText(kitItem?.name)
+    )
+  );
 }
 
 grid.addEventListener('click', (event) => {
@@ -1017,22 +985,9 @@ grid.addEventListener('click', (event) => {
 
       if (!product || !kitItem) return;
 
-      const accessory =
-        products.find(
-          item => String(item.id) === String(kitItem.accessory_product_id)
-        ) ||
-        products.find(
-          item =>
-            categoryFor(item) === 'accesorios' &&
-            normalizeSearchText(item.name) ===
-            normalizeSearchText(kitItem.name)
-        );
-
+      const accessory = findAccessory(kitItem);
       const selected = kitSelections.get(product.id) || new Map();
-
-      const current = Number(
-        selected.get(String(kitItem.id)) || 0
-      );
+      const current = Number(selected.get(String(kitItem.id)) || 0);
 
       if (accessory && current >= Number(accessory.stock || 0)) {
         return;
@@ -1054,9 +1009,7 @@ grid.addEventListener('click', (event) => {
       item => item.id === previewButton.dataset.previewProduct
     );
 
-    if (product) {
-      openProductPhoto(product);
-    }
+    if (product) openProductPhoto(product);
 
     return;
   }
@@ -1117,16 +1070,7 @@ grid.addEventListener('dblclick', event => {
     item => String(item.id) === kitButton.dataset.kitId
   );
 
-  const accessory =
-    products.find(
-      item => String(item.id) === String(kitItem?.accessory_product_id)
-    ) ||
-    products.find(
-      item =>
-        categoryFor(item) === 'accesorios' &&
-        normalizeSearchText(item.name) ===
-        normalizeSearchText(kitItem?.name)
-    );
+  const accessory = findAccessory(kitItem);
 
   if (accessory) openProductPhoto(accessory);
 });
@@ -1136,10 +1080,10 @@ function openProductPhoto(product) {
 
   window.catalogueReturnPosition = window.scrollY;
 
-  document.querySelector('#previewImage').src =
-    imageUrl(product.image_path);
+  const previewImage = document.querySelector('#previewImage');
 
-  document.querySelector('#previewImage').alt = product.name;
+  previewImage.src = imageUrl(product.image_path);
+  previewImage.alt = product.name;
 
   preview.showModal();
 }
@@ -1154,23 +1098,15 @@ function updateKitCard(product) {
   const selected = kitSelections.get(product.id) || new Map();
 
   card.querySelectorAll('[data-kit-item]').forEach(button => {
-    const quantity = Number(
-      selected.get(button.dataset.kitId) || 0
-    );
+    const quantity = Number(selected.get(button.dataset.kitId) || 0);
 
     button.classList.toggle('is-selected', quantity > 0);
-
-    button.setAttribute(
-      'aria-pressed',
-      String(quantity > 0)
-    );
+    button.setAttribute('aria-pressed', String(quantity > 0));
 
     const removeButton =
       button.parentElement.querySelector('[data-kit-remove]');
 
-    if (removeButton) {
-      removeButton.disabled = quantity <= 0;
-    }
+    if (removeButton) removeButton.disabled = quantity <= 0;
   });
 }
 
@@ -1183,9 +1119,7 @@ document.querySelector('.category-tabs')
     activeCategory = button.dataset.category;
 
     document.querySelectorAll('[data-category]')
-      .forEach(tab =>
-        tab.classList.toggle('is-active', tab === button)
-      );
+      .forEach(tab => tab.classList.toggle('is-active', tab === button));
 
     renderProducts();
   });
@@ -1228,29 +1162,16 @@ cartItemsEl.addEventListener('click', event => {
 
   const line = getCartLine(id, cart[id]);
 
-  const product = products.find(
-    item => item.id === line.productId
-  );
+  const product = products.find(item => item.id === line.productId);
 
   if (action === 'remove') {
     delete cart[id];
-
   } else if (action === 'decrease') {
     line.quantity--;
-
-    cart[id] = line.legacy
-      ? line.quantity
-      : line;
-
+    cart[id] = line.legacy ? line.quantity : line;
   } else if (action === 'increase' && product) {
-    line.quantity = Math.min(
-      line.quantity + 1,
-      product.stock
-    );
-
-    cart[id] = line.legacy
-      ? line.quantity
-      : line;
+    line.quantity = Math.min(line.quantity + 1, product.stock);
+    cart[id] = line.legacy ? line.quantity : line;
   }
 
   cartMessage.textContent = '';
@@ -1279,7 +1200,6 @@ function updateConnectionNotice() {
   if (!navigator.onLine) {
     if (networkNotice) {
       networkNotice.hidden = false;
-
       networkNotice.textContent =
         'Estás sin internet. Puedes explorar el catálogo guardado y preparar el carrito; WhatsApp se habilitará al reconectarte.';
     }
@@ -1290,34 +1210,32 @@ function updateConnectionNotice() {
 
   if (networkNotice) {
     networkNotice.hidden = false;
-
     networkNotice.textContent =
       'Conexión recuperada. Actualizando catálogo y stock…';
   }
 
   loadProducts({ loading: false })
-  .then(loaded => {
-    if (networkNotice) {
-      networkNotice.hidden = false;
+    .then(loaded => {
+      if (networkNotice) {
+        networkNotice.hidden = false;
+        networkNotice.textContent = loaded
+          ? 'Catálogo actualizado. Ya puedes continuar tu pedido por WhatsApp.'
+          : 'No pudimos conectar con el catálogo todavía. Conservamos tu carrito; intenta de nuevo en un momento.';
+      }
 
-      networkNotice.textContent = loaded
-        ? 'Catálogo actualizado. Ya puedes continuar tu pedido por WhatsApp.'
-        : 'No pudimos conectar con el catálogo todavía. Conservamos tu carrito; intenta de nuevo en un momento.';
-    }
+      renderCart();
+    })
+    .catch(error => {
+      console.error('Error al actualizar la conexión:', error);
 
-    renderCart();
-  })
-  .catch(error => {
-    console.error('Error al actualizar la conexión:', error);
+      if (networkNotice) {
+        networkNotice.hidden = false;
+        networkNotice.textContent =
+          'No pudimos actualizar el catálogo. Conservamos tu carrito; intenta nuevamente.';
+      }
 
-    if (networkNotice) {
-      networkNotice.hidden = false;
-      networkNotice.textContent =
-        'No pudimos actualizar el catálogo. Conservamos tu carrito; intenta nuevamente.';
-    }
-
-    renderCart();
-  });
+      renderCart();
+    });
 }
 
 window.addEventListener('offline', updateConnectionNotice);
@@ -1325,25 +1243,19 @@ window.addEventListener('online', updateConnectionNotice);
 
 async function startPublicStore() {
   try {
-    await loadProducts();
+    if (
+      'serviceWorker' in navigator &&
+      window.location.protocol === 'https:'
+    ) {
+      await navigator.serviceWorker.register('/service-worker.js');
+      await navigator.serviceWorker.ready;
+    }
   } catch (error) {
-    console.error('Error al iniciar la tienda:', error);
+    // Si falla el service worker, la tienda debe seguir cargando.
+    console.warn('No se pudo registrar el service worker:', error);
   }
+
+  await loadProducts();
 }
 
-if (
-  'serviceWorker' in navigator &&
-  window.location.protocol === 'https:'
-) {
-  try {
-    await navigator.serviceWorker.register('/service-worker.js');
-    await navigator.serviceWorker.ready;
-  } catch (error) {
-    console.warn(
-      'No se pudo habilitar el modo sin conexión:',
-      error
-    );
-  }
-}
-
-await startPublicStore();
+window.addEventListener('load', startPublicStore, { once: true });
