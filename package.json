@@ -7,5 +7,20 @@
   },
   "scripts": {
     "build": "node build.mjs"
-  }
+  },
+  "version": "1.0.0",
+  "description": "Proyecto organizado como una página web para trabajar cómodamente en **Visual Studio Code**.",
+  "main": "service-worker.js",
+  "devDependencies": {},
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Carflox/ycnicelady.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/Carflox/ycnicelady/issues"
+  },
+  "homepage": "https://github.com/Carflox/ycnicelady#readme"
 }
