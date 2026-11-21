@@ -2,7 +2,7 @@
 # YC NICE LADY - APPWRITE
 # ==========================================
 
-# Variables privadas y secretos
+# Variables privadas y secretos (solo .env.example se sube, con valores falsos)
 .env
 .env.*
 !.env.example
@@ -14,16 +14,19 @@ node_modules/
 # Compilación
 dist/
 
-# Git
-.git/
-
 # Configuración local del editor
 .vscode/
 
-# Bases de datos locales
-data/*.sqlite3
-data/*.sqlite3-wal
-data/*.sqlite3-shm
+# Bases de datos locales (costos, contraseñas y datos privados)
+data/
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
 
 # Configuración local de Appwrite
 appwrite.local.json
+
+# Sistema y registros
+.DS_Store
+Thumbs.db
+*.log

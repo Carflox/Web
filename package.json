@@ -1,22 +1,19 @@
 {
-  "name": "yc-nice-lady-netlify",
+  "name": "yc-nice-lady",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
+  "description": "YC NICE LADY - tienda en Appwrite Sites con catálogo y pedidos en una Appwrite Function.",
   "engines": {
-    "node": ">=24"
+    "node": ">=22"
   },
   "scripts": {
     "build": "node build.mjs"
   },
-  "version": "1.0.0",
-  "description": "Proyecto organizado como una página web para trabajar cómodamente en **Visual Studio Code**.",
-  "main": "service-worker.js",
-  "devDependencies": {},
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Carflox/ycnicelady.git"
   },
-  "keywords": [],
   "author": "",
   "license": "ISC",
   "bugs": {
